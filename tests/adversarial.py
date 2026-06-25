@@ -6,8 +6,9 @@ throwaway sandbox copy of the repo. The live repo is never modified.
 
 Each sandbox is first sealed correctly (SOUL.md gets a real sha256 SEAL), so
 the only integrity incidents that fire are the ones a scenario deliberately
-causes. The shipped SOUL.md carries a placeholder seal for humans to compute
-on deploy; the harness must not depend on it.
+causes. A local HTTP sink stands in for the operator notification channel so
+the 'alert exactly once per incident' guarantee is verified end-to-end
+(counting real delivered notifications), with no external network.
 
 Usage:  python tests/adversarial.py
 Exit code is non-zero if any scenario FAILs.
@@ -23,10 +24,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SEAL_RE = re.compile(r"(<!--\s*SEAL:\s*)([0-9a-fA-F]{64}|[^\n]*?)(\s*-->)")
 RESULTS = []
 
 
@@ -36,11 +38,32 @@ def record(name, passed, detail=""):
     print(f"[{tag}] {name}" + (f" :: {detail}" if detail else ""))
 
 
-def seal_soul(repo):
-    """Write a correct sha256 SEAL into the sandbox SOUL.md.
+class _Sink(BaseHTTPRequestHandler):
+    messages = []
 
-    Mirrors the watchdog: digest is over the bytes before the SEAL marker.
-    """
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode() if length else ""
+        type(self).messages.append(body)
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, *a):
+        pass
+
+
+def start_sink():
+    """Local notify sink. Returns (url, server, reset_fn)."""
+    _Sink.messages = []
+    server = HTTPServer(("127.0.0.1", 0), _Sink)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host, port = server.server_address
+    return f"http://{host}:{port}", server, lambda: _Sink.messages.clear()
+
+
+def seal_soul(repo):
+    """Write a correct sha256 SEAL into the sandbox SOUL.md."""
     soul = repo / "SOUL.md"
     text = soul.read_text()
     m = re.search(r"<!--\s*SEAL:", text)
@@ -48,8 +71,7 @@ def seal_soul(repo):
         return
     body = text[: m.start()]
     digest = hashlib.sha256(body.encode()).hexdigest()
-    sealed = text[: m.start()] + f"<!-- SEAL: {digest} -->\n"
-    soul.write_text(sealed)
+    soul.write_text(text[: m.start()] + f"<!-- SEAL: {digest} -->\n")
 
 
 def sandbox(seal=True):
@@ -62,13 +84,13 @@ def sandbox(seal=True):
     return repo
 
 
-def run_watchdog(repo):
+def run_watchdog(repo, notify_url):
     """Invoke the real watchdog handler in the sandbox; return parsed output."""
     wd = repo / "skills" / "integrity-watchdog" / "handler.py"
     proc = subprocess.run(
         [sys.executable, str(wd)],
         capture_output=True, text=True, cwd=str(repo),
-        env={**os.environ, "EIDOLON_NOTIFY": ""},  # no real network; logs only
+        env={**os.environ, "EIDOLON_NOTIFY": notify_url},
     )
     last = [l for l in proc.stdout.strip().splitlines() if l.strip()]
     try:
@@ -77,60 +99,50 @@ def run_watchdog(repo):
         return {"_raw": proc.stdout, "_err": proc.stderr}
 
 
-def notify_count(repo):
-    """How many open incidents are currently marked notified."""
-    sf = repo / "state" / "integrity-watchdog.json"
-    if not sf.exists():
-        return 0, {}
-    st = json.loads(sf.read_text())
-    inc = st.get("incidents", {})
-    return sum(1 for v in inc.values() if v.get("notified")), inc
+def count(substr):
+    return sum(1 for m in _Sink.messages if substr in m)
 
 
-def scenario_1_soul_tamper():
+def scenario_1_soul_tamper(url, reset):
+    reset()
     repo = sandbox()  # starts correctly sealed
     soul = repo / "SOUL.md"
-    text = soul.read_text()
-    # Flip a byte in the body WITHOUT updating the seal.
-    tampered = text.replace("I am an Eidolon", "I am an Eid0lon", 1)
-    soul.write_text(tampered)
+    soul.write_text(soul.read_text().replace("I am an Eidolon", "I am an Eid0lon", 1))
 
-    first = run_watchdog(repo)
-    tamper_caught = first.get("status") == "incident" and \
+    first = run_watchdog(repo, url)
+    caught = first.get("status") == "incident" and \
         "soul:tampered" in first.get("open", [])
 
-    # Second run with same tamper must NOT add a second notification.
-    _ = run_watchdog(repo)
-    n_notified, inc = notify_count(repo)
-    once = tamper_caught and n_notified == 1 and len(inc) == 1
+    run_watchdog(repo, url)  # second run, same tamper
+    incident_notifs = count("integrity incident:") - count("resolved")
+    once = caught and incident_notifs == 1
 
-    record("S1 soul-tamper detected", tamper_caught, str(first.get("open")))
-    record("S1 alert-once (no duplicate incident)", once, f"notified={n_notified}")
+    record("S1 soul-tamper detected", caught, str(first.get("open")))
+    record("S1 alert-once (one delivered notice)", once, f"notifs={incident_notifs}")
     shutil.rmtree(repo.parent, ignore_errors=True)
 
 
-def scenario_2_skills_drift():
-    repo = sandbox()  # sealed, so soul checks stay clean
+def scenario_2_skills_drift(url, reset):
+    reset()
+    repo = sandbox()
     dc = repo / "skills" / "dream-cycle"
     moved = repo / "skills" / "dream-cycle-MOVED"
     dc.rename(moved)
 
-    first = run_watchdog(repo)
+    first = run_watchdog(repo, url)
     open1 = first.get("open", [])
-    drift_detected = open1 == ["skills:dream-cycle"]
-    n1, _ = notify_count(repo)
+    detected = open1 == ["skills:dream-cycle"]
+    run_watchdog(repo, url)  # second run, still broken
+    incident_notifs = count("integrity incident:")
+    alert_once = detected and incident_notifs == 1
 
-    second = run_watchdog(repo)
-    n2, _ = notify_count(repo)
-    alert_once = drift_detected and n1 == 1 and n2 == 1
+    moved.rename(dc)  # repair
+    third = run_watchdog(repo, url)
+    resolved = third.get("open", []) == [] and third.get("status") == "ok" \
+        and count("resolved") == 1
 
-    # Restore the path; incident must resolve.
-    moved.rename(dc)
-    third = run_watchdog(repo)
-    resolved = third.get("open", []) == [] and third.get("status") == "ok"
-
-    record("S2 skills-drift detected", drift_detected, str(open1))
-    record("S2 alert exactly once across runs", alert_once, f"n1={n1} n2={n2}")
+    record("S2 skills-drift detected", detected, str(open1))
+    record("S2 alert exactly once across runs", alert_once, f"notifs={incident_notifs}")
     record("S2 incident resolves after repair", resolved, str(third.get("open")))
     shutil.rmtree(repo.parent, ignore_errors=True)
 
@@ -146,19 +158,14 @@ def load_dream_module(repo):
 def scenario_3_regressing_candidate():
     repo = sandbox()
     mod = load_dream_module(repo)
-
     soul_before = (repo / "SOUL.md").read_text()
 
-    # Force shadow_test to report a REGRESSION (negative delta).
-    mod.shadow_test = lambda c: {"delta": -0.5}
+    mod.shadow_test = lambda c: {"delta": -0.5}  # force regression
     state = {"runs": [], "last_known_good": "baseline-v0"}
-    bad = {"id": "cand-bad", "risk": "high"}
-
-    mod.gate_and_apply([bad], state)
+    mod.gate_and_apply([{"id": "cand-bad", "risk": "high"}], state)
 
     not_promoted = state["last_known_good"] == "baseline-v0"
-    soul_after = (repo / "SOUL.md").read_text()
-    invariants_intact = soul_before == soul_after
+    invariants_intact = soul_before == (repo / "SOUL.md").read_text()
 
     record("S3 regressing candidate discarded (LKG unchanged)",
            not_promoted, f"lkg={state['last_known_good']}")
@@ -168,9 +175,13 @@ def scenario_3_regressing_candidate():
 
 def main():
     print("Eidolon adversarial tests — sandboxed, live repo untouched\n")
-    scenario_1_soul_tamper()
-    scenario_2_skills_drift()
-    scenario_3_regressing_candidate()
+    url, server, reset = start_sink()
+    try:
+        scenario_1_soul_tamper(url, reset)
+        scenario_2_skills_drift(url, reset)
+        scenario_3_regressing_candidate()
+    finally:
+        server.shutdown()
 
     passed = sum(1 for _, p, _ in RESULTS if p)
     total = len(RESULTS)
