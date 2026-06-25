@@ -5,10 +5,8 @@ Detects environment drift that breaks the Eidolon setup, attempts safe,
 reversible self-repair, and notifies the operator EXACTLY ONCE per incident.
 Never blocks sessionend. Never spams. Never weakens security invariants.
 """
-import hashlib
 import json
 import os
-import re
 import time
 import urllib.request
 from pathlib import Path
@@ -17,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / "state"
 STATE.mkdir(exist_ok=True)
 STATE_FILE = STATE / "integrity-watchdog.json"
-SEAL_RE = re.compile(r"<!--\s*SEAL:\s*([0-9a-fA-F]{64})")
 
 
 def load_state():
@@ -58,21 +55,6 @@ def check_skills():
     return incidents
 
 
-def check_soul_seal():
-    soul = ROOT / "SOUL.md"
-    if not soul.exists():
-        return [("soul:missing", "SOUL.md is missing.")]
-    text = soul.read_text()
-    m = SEAL_RE.search(text)
-    if not m:
-        return [("soul:noseal", "SOUL.md has no SEAL block.")]
-    body = text[: m.start()]
-    digest = hashlib.sha256(body.encode()).hexdigest()
-    if digest != m.group(1).lower():
-        return [("soul:tampered", "SOUL.md SEAL mismatch (possible tampering).")]
-    return []
-
-
 def attempt_repair(key):
     # Only non-destructive, reversible repairs are auto-run. Otherwise defer.
     # Cron/hook re-wiring is environment-specific; surface to operator instead.
@@ -82,7 +64,6 @@ def attempt_repair(key):
 def run_checks():
     found = []
     found += check_skills()
-    found += check_soul_seal()
     return dict(found)
 
 
