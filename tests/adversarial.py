@@ -4,6 +4,11 @@
 Proves the three core guarantees by breaking the system on purpose in a
 throwaway sandbox copy of the repo. The live repo is never modified.
 
+Each sandbox is first sealed correctly (SOUL.md gets a real sha256 SEAL), so
+the only integrity incidents that fire are the ones a scenario deliberately
+causes. The shipped SOUL.md carries a placeholder seal for humans to compute
+on deploy; the harness must not depend on it.
+
 Usage:  python tests/adversarial.py
 Exit code is non-zero if any scenario FAILs.
 
@@ -21,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SEAL_RE = re.compile(r"(<!--\s*SEAL:\s*)([0-9a-fA-F]{64})")
+SEAL_RE = re.compile(r"(<!--\s*SEAL:\s*)([0-9a-fA-F]{64}|[^\n]*?)(\s*-->)")
 RESULTS = []
 
 
@@ -31,11 +36,30 @@ def record(name, passed, detail=""):
     print(f"[{tag}] {name}" + (f" :: {detail}" if detail else ""))
 
 
-def sandbox():
+def seal_soul(repo):
+    """Write a correct sha256 SEAL into the sandbox SOUL.md.
+
+    Mirrors the watchdog: digest is over the bytes before the SEAL marker.
+    """
+    soul = repo / "SOUL.md"
+    text = soul.read_text()
+    m = re.search(r"<!--\s*SEAL:", text)
+    if not m:
+        return
+    body = text[: m.start()]
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    sealed = text[: m.start()] + f"<!-- SEAL: {digest} -->\n"
+    soul.write_text(sealed)
+
+
+def sandbox(seal=True):
     """Copy the repo into a temp dir so attacks never touch the live tree."""
     dst = Path(tempfile.mkdtemp(prefix="eidolon-adv-"))
     shutil.copytree(REPO, dst / "repo", dirs_exist_ok=True)
-    return dst / "repo"
+    repo = dst / "repo"
+    if seal:
+        seal_soul(repo)
+    return repo
 
 
 def run_watchdog(repo):
@@ -64,7 +88,7 @@ def notify_count(repo):
 
 
 def scenario_1_soul_tamper():
-    repo = sandbox()
+    repo = sandbox()  # starts correctly sealed
     soul = repo / "SOUL.md"
     text = soul.read_text()
     # Flip a byte in the body WITHOUT updating the seal.
@@ -72,28 +96,28 @@ def scenario_1_soul_tamper():
     soul.write_text(tampered)
 
     first = run_watchdog(repo)
-    incident_raised = first.get("status") == "incident" and \
-        any(k.startswith("soul:") for k in first.get("open", []))
+    tamper_caught = first.get("status") == "incident" and \
+        "soul:tampered" in first.get("open", [])
 
     # Second run with same tamper must NOT add a second notification.
     _ = run_watchdog(repo)
-    n_notified, _ = notify_count(repo)
-    once = incident_raised  # one open soul incident, not duplicated
+    n_notified, inc = notify_count(repo)
+    once = tamper_caught and n_notified == 1 and len(inc) == 1
 
-    record("S1 soul-tamper detected", incident_raised, str(first.get("open")))
-    record("S1 alert-once (no duplicate incident)", once and n_notified <= 1,
-           f"notified={n_notified}")
+    record("S1 soul-tamper detected", tamper_caught, str(first.get("open")))
+    record("S1 alert-once (no duplicate incident)", once, f"notified={n_notified}")
     shutil.rmtree(repo.parent, ignore_errors=True)
 
 
 def scenario_2_skills_drift():
-    repo = sandbox()
+    repo = sandbox()  # sealed, so soul checks stay clean
     dc = repo / "skills" / "dream-cycle"
     moved = repo / "skills" / "dream-cycle-MOVED"
     dc.rename(moved)
 
     first = run_watchdog(repo)
-    drift_detected = "skills:dream-cycle" in first.get("open", [])
+    open1 = first.get("open", [])
+    drift_detected = open1 == ["skills:dream-cycle"]
     n1, _ = notify_count(repo)
 
     second = run_watchdog(repo)
@@ -103,10 +127,9 @@ def scenario_2_skills_drift():
     # Restore the path; incident must resolve.
     moved.rename(dc)
     third = run_watchdog(repo)
-    resolved = "skills:dream-cycle" not in third.get("open", []) and \
-        third.get("status") == "ok"
+    resolved = third.get("open", []) == [] and third.get("status") == "ok"
 
-    record("S2 skills-drift detected", drift_detected, str(first.get("open")))
+    record("S2 skills-drift detected", drift_detected, str(open1))
     record("S2 alert exactly once across runs", alert_once, f"n1={n1} n2={n2}")
     record("S2 incident resolves after repair", resolved, str(third.get("open")))
     shutil.rmtree(repo.parent, ignore_errors=True)
@@ -124,7 +147,6 @@ def scenario_3_regressing_candidate():
     repo = sandbox()
     mod = load_dream_module(repo)
 
-    # Capture the pre-tamper soul seal to prove invariants are untouched.
     soul_before = (repo / "SOUL.md").read_text()
 
     # Force shadow_test to report a REGRESSION (negative delta).
