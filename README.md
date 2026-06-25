@@ -1,5 +1,7 @@
 # Eidolon — Universal Self-Improvement Layer for Hermes Agents
 
+[![adversarial](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml)
+
 Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflection, and memory loops into a disciplined, anti-fragile, self-improving system. Zero human babysitting: it runs autonomously, improves itself every session and on a schedule, and refuses to guess or gaslight.
 
 ## What it does
