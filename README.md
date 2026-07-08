@@ -58,6 +58,14 @@ See `OPERATOR.md` for details.
 Verify the guarantees anytime with `python tests/adversarial.py` or
 `PYTHONPATH=src python -m unittest discover -s tests/unit -v`.
 
+## Releases & DOI
+
+Eidolon uses SemVer (`vX.Y.Z`); host Hermes uses CalVer. The `hermes_version`
+doctor check reasons over dates, not SemVer — see
+`src/eidolon/checks/hermes_version.py`. Stable tags are minted on Zenodo
+(`.zenodo.json` at repo root is the source of truth). Prereleases skip DOI
+minting. See [RELEASING.md](RELEASING.md) for the full tagging + DOI policy.
+
 ## License
 
-Apache License 2.0.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
