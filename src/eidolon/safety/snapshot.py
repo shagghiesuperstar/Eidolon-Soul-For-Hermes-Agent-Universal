@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Snapshot management for last-known-good rollback (REC-004).
 
 Strategy:

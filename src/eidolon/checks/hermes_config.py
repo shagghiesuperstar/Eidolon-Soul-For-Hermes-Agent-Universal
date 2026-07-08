@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check: host Hermes config.yaml is reachable and parseable.
 
 DEGRADED (not FAIL) when Hermes is not installed: Eidolon can still run its own

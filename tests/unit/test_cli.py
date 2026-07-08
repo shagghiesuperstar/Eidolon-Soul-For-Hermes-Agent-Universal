@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-001: canonical CLI spine."""
 
 from __future__ import annotations

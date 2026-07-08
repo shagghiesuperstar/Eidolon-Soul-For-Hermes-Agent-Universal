@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`eidolon rollback` — restore from last-known-good snapshot."""
 
 from __future__ import annotations

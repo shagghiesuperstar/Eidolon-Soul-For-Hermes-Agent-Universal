@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-004: last_known_good on first success + rollback restores."""
 
 from __future__ import annotations

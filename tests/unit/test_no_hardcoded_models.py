@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-005 CI enforcement: no hardcoded model / provider identities in src/.
 
 This is the load-bearing test that keeps the router provider-agnostic. If a

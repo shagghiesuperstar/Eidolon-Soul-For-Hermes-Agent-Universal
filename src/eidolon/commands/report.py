@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`eidolon report` — print measurable metrics for the given window.
 
 Empty state is a valid, structured output. Non-empty state includes deltas

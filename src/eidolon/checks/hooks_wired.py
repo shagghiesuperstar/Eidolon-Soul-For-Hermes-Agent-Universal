@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check: Hermes session-end hook + cron scheduling reference Eidolon skills.
 
 Strategy: read config.yaml as text (stdlib-only; no PyYAML dependency) and

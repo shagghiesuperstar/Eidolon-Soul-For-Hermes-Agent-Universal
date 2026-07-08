@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Path resolution for Eidolon state.
 
 Rules:

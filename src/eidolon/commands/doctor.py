@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`eidolon doctor` — preflight checks with a mandatory DEGRADED state.
 
 Exit codes:

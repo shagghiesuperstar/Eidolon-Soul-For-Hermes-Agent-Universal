@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Helper: create isolated HERMES_HOME + EIDOLON_HOME per test."""
 
 from __future__ import annotations

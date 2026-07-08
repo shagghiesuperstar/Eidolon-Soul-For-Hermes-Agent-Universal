@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Safety primitives: snapshots, rollback, risk classification."""
 
 from eidolon.safety.snapshot import Snapshot, take_snapshot, list_snapshots

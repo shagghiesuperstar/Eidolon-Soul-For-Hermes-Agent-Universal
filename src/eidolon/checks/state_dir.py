@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check: Eidolon can create + write its own state directory."""
 
 from __future__ import annotations

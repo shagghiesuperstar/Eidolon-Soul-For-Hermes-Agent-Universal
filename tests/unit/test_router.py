@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-005: provider-agnostic inference router."""
 
 from __future__ import annotations

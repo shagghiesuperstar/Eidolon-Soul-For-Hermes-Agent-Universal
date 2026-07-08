@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check: at least one inference provider satisfies Tier A capabilities.
 
 This never names a specific model. It asks the inference router: given the

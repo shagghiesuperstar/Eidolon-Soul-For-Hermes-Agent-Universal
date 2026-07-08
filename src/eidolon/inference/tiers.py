@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Canonical capability tiers.
 
 Tiers are *requirements*, not model identities. A provider that meets the

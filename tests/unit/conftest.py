@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Test setup: point Eidolon at an isolated $EIDOLON_HOME + $HERMES_HOME.
 
 Also ensures the src/ tree is importable when running `python -m unittest`

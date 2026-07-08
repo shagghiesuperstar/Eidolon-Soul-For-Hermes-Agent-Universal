@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check: SOUL.md is present and non-empty at the repo root."""
 
 from __future__ import annotations

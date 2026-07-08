@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Eidolon — self-improvement layer for Hermes Agent.
 
 Public surface:

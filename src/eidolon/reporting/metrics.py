@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Aggregate events.jsonl into a stable numeric report.
 
 Contract:

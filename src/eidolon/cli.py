@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Canonical Eidolon CLI.
 
 Design notes (Fable-5 direction):

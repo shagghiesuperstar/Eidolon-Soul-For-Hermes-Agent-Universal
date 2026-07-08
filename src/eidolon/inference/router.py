@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Provider-agnostic inference router (REC-005).
 
 Contract:

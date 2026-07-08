@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-003: `eidolon report` produces integers and a stable schema."""
 
 from __future__ import annotations
