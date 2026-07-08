@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  # `bump-citation` job overrides this with `contents: write` scoped to itself.
 
 jobs:
   build:
@@ -94,3 +95,47 @@ jobs:
           path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  bump-citation:
+    name: Bump CITATION.cff version + date-released
+    needs: publish-pypi
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.CITATION_BUMP_PAT || secrets.GITHUB_TOKEN }}
+      - name: Update CITATION.cff
+        env:
+          TAG: ${{ github.ref }}
+        run: |
+          set -e
+          export CFF_VERSION="${TAG##refs/tags/v}"
+          export CFF_DATE="$(date -u +%Y-%m-%d)"
+          echo "Bumping CITATION.cff to version=$CFF_VERSION date-released=$CFF_DATE"
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          version = os.environ["CFF_VERSION"]
+          released = os.environ["CFF_DATE"]
+          p = Path("CITATION.cff")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(r'^version: .*$', f'version: "{version}"', text, flags=re.M)
+          text = re.sub(r'^date-released: .*$', f'date-released: "{released}"', text, flags=re.M)
+          p.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit + push
+        run: |
+          if git diff --quiet CITATION.cff; then
+            echo "CITATION.cff already up-to-date; nothing to commit."
+            exit 0
+          fi
+          git config user.name  "eidolon-agent[bot]"
+          git config user.email "eidolon-agent@users.noreply.github.com"
+          git add CITATION.cff
+          git commit -m "chore(citation): bump to ${GITHUB_REF##refs/tags/v}"
+          git push origin HEAD:main
