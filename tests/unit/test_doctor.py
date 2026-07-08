@@ -48,6 +48,12 @@ class DoctorTests(IsolatedHome):
                 "context_window": 32000,
             }
         })
+        # REC-009: seed a preferences.jsonl so the preferences_schema check reports PASS.
+        # An empty (missing) file is DEGRADED by design; that's covered in
+        # test_preference_logging.py.
+        import hashlib
+        from eidolon.learning.preferences import log_pair
+        log_pair("a", "b", "bandit", hashlib.sha256(b"seed").hexdigest(), ts=1.0)
         code, out = self._run(["doctor", "--json", "--model-check"])
         data = json.loads(out.strip().splitlines()[-1])
         self.assertEqual(code, 0, f"expected PASS overall, got: {data}")

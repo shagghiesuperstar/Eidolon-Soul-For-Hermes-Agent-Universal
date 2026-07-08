@@ -122,6 +122,27 @@ def run(
 
     posterior = bandit.posterior_means()
     counts = bandit.selection_counts()
+
+    # REC-009: emit preference pairs from bandit outcomes.
+    # For each pair (A, B) where A's posterior mean strictly beats B's, log
+    # A > B once, using a stable structural context tag (never raw content).
+    try:
+        from eidolon.learning.preferences import emit_bandit_outcome
+
+        ranked = sorted(posterior.items(), key=lambda kv: kv[1], reverse=True)
+        for i in range(len(ranked)):
+            for j in range(i + 1, len(ranked)):
+                chosen, chosen_mean = ranked[i]
+                rejected, rejected_mean = ranked[j]
+                if chosen_mean > rejected_mean:
+                    emit_bandit_outcome(
+                        chosen_arm=chosen,
+                        rejected_arm=rejected,
+                        context=f"learn:seed={seed}:iterations={iterations}",
+                    )
+    except Exception:  # noqa: BLE001 — emission must never break training
+        pass
+
     events.emit(
         "learn.step",
         events.STATUS_PASS,
