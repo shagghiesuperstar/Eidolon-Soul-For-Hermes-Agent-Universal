@@ -1,0 +1,27 @@
+# Files included in the sdist (source distribution) beyond what setuptools
+# picks up by default. The wheel picks up top-level docs via package data
+# rules elsewhere; MANIFEST.in only affects the sdist tarball.
+include README.md
+include LICENSE
+include NOTICE
+include RELEASING.md
+include SOUL.md
+include OPERATOR.md
+include pyproject.toml
+include MANIFEST.in
+
+# Ship the roadmap and any docs directory for provenance.
+include *.md
+recursive-include docs *.md
+
+# Skills directory is part of the shipped artifact (referenced by installer).
+recursive-include skills *.py *.md *.yml *.yaml *.json
+
+# Exclude noise.
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store
+prune tests
+prune .github
+prune .githooks

@@ -23,16 +23,36 @@ The Zenodo GitHub integration triggers on any tag by default. To skip a
 prerelease, in the Zenodo UI: "Upload" → find the pending draft → discard it
 before hitting Publish. Only stable `vX.Y.Z` tags should be published.
 
+## Packaging pipeline (REC-007)
+
+`eidolon-hermes` publishes to TestPyPI on every `main` push and to real PyPI
+on every stable `v*` tag. Publishing uses **PyPI Trusted Publishing** (OIDC);
+no API tokens are stored in the repository or in secrets.
+
+| Trigger                | Target       | Environment  | Approval           |
+| ---------------------- | ------------ | ------------ | ------------------ |
+| push to `main`         | TestPyPI     | `pypi-test`  | none (auto)        |
+| tag `vX.Y.Z` (stable)  | PyPI         | `pypi-prod`  | GitHub env review  |
+| tag `vX.Y.Z-rc*`, etc  | (build only) | —            | never uploads      |
+
+Workflow: `.github/workflows/release.yml`. The `publish-pypi` job's `if:`
+filter skips any tag containing `-` (rc, beta, dev), so prereleases never
+reach real PyPI even if the environment gate is approved by mistake.
+
 ## Release checklist
 
 1. Bump `src/eidolon/_version.py` to the target version (drop `-dev0` suffix).
 2. Update `CHANGELOG.md` (create if missing) with the release notes.
-3. `git tag -s vX.Y.Z -m "Eidolon vX.Y.Z"` (signed tags preferred).
-4. `git push origin vX.Y.Z`.
-5. Wait for GitHub Release to auto-publish (or draft one manually via `gh release create`).
-6. Verify Zenodo picked up the release → DOI appears in the Zenodo dashboard.
-7. Add DOI badge to `README.md` if this is the first stable release.
-8. Bump `src/eidolon/_version.py` to next `-dev0` on `main`.
+3. Commit and merge to `main` — wait for `release.yml` to publish to TestPyPI
+   successfully. Verify at https://test.pypi.org/project/eidolon-hermes/.
+4. `git tag -s vX.Y.Z -m "Eidolon vX.Y.Z"` (signed tags preferred).
+5. `git push origin vX.Y.Z`.
+6. GitHub Actions pauses at the `pypi-prod` environment gate. **Manually
+   approve** the deployment in the Actions UI. Real PyPI upload proceeds.
+7. Wait for GitHub Release to auto-publish (or draft one manually via `gh release create`).
+8. Verify Zenodo picked up the release → DOI appears in the Zenodo dashboard.
+9. Add DOI badge to `README.md` if this is the first stable release.
+10. Bump `src/eidolon/_version.py` to next `-dev0` on `main`.
 
 ## Prerelease workflow
 
