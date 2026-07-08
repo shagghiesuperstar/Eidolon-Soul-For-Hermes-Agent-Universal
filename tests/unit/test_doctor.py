@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """REC-002: `eidolon doctor` with JSON output + DEGRADED state."""
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ class DoctorTests(IsolatedHome):
 
     def test_wired_hooks_and_provider_yields_pass(self) -> None:
         self.write_hermes_config(
-            "session_end_hook: dream-cycle\ncron:\n  - integrity-watchdog\n"
+            "session_end_hook: dream-cycle\ncron:\n  - integrity-watchdog\nversion: v2026.6.15\n"
         )
         self.write_hermes_cache({
             "any-provider": {

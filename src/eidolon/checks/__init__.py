@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Doctor check framework.
 
 Every check is a callable returning a CheckResult. Checks must:
@@ -61,6 +62,7 @@ def registry() -> List[CheckFn]:
     """
     from eidolon.checks import (
         hermes_config,
+        hermes_version,
         hooks_wired,
         provider_capability,
         soul_present,
@@ -70,6 +72,7 @@ def registry() -> List[CheckFn]:
     return [
         safe(soul_present.check),
         safe(hermes_config.check),
+        safe(hermes_version.check),
         safe(state_dir.check),
         safe(hooks_wired.check),
         safe(provider_capability.check),
