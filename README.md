@@ -2,6 +2,8 @@
 
 [![adversarial](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml)
 [![installer-test](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml)
+[![release](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/release.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/release.yml)
+[![TestPyPI](https://img.shields.io/badge/TestPyPI-eidolon--hermes-blue?logo=pypi)](https://test.pypi.org/project/eidolon-hermes/)
 
 Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflection, and memory loops into a disciplined, anti-fragile, self-improving system. Zero human babysitting: it runs autonomously, improves itself every session and on a schedule, and refuses to guess or gaslight. Deploy once and forget it.
 
