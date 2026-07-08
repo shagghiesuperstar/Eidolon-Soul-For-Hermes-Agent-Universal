@@ -54,6 +54,23 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return verify.run(json_out=args.json, strict=args.strict)
 
 
+def _cmd_learn(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from eidolon.commands import learn
+
+    if not args.step:
+        print("learn: --step is required (v1 has only the training-step verb)", file=sys.stderr)
+        return EXIT_FAIL
+    fixtures = Path(args.fixtures) if args.fixtures else None
+    return learn.run(
+        iterations=args.iterations,
+        seed=args.seed,
+        fixtures_dir=fixtures,
+        stable_ts=not args.wall_clock_ts,
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="eidolon",
@@ -98,6 +115,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Treat DEGRADED as failure (exit 2). Default folds DEGRADED into PASS.",
     )
     vf.set_defaults(func=_cmd_verify)
+
+    ln = sub.add_parser(
+        "learn",
+        help="Run bandit episodes (v1: prompt-phrasing arms). Deterministic; no network.",
+    )
+    ln.add_argument("--step", action="store_true", help="Run one training-step batch.")
+    ln.add_argument("--iterations", type=int, default=100)
+    ln.add_argument("--seed", type=int, default=42)
+    ln.add_argument("--fixtures", type=str, default=None, help="Override fixtures dir.")
+    ln.add_argument(
+        "--wall-clock-ts",
+        action="store_true",
+        help="Use wall-clock ts instead of the CI-stable hash-derived ts.",
+    )
+    ln.set_defaults(func=_cmd_learn)
 
     return p
 
