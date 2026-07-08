@@ -67,6 +67,7 @@ def registry() -> List[CheckFn]:
         learning_bandit_ready,
         preferences_schema,
         provider_capability,
+        risk_classifier_ready,
         soul_present,
         state_dir,
     )
@@ -80,4 +81,5 @@ def registry() -> List[CheckFn]:
         safe(provider_capability.check),
         safe(learning_bandit_ready.check),
         safe(preferences_schema.check),
+        safe(risk_classifier_ready.check),
     ]
