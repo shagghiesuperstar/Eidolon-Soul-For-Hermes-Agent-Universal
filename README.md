@@ -28,35 +28,11 @@ skills/integrity-watchdog/  Drift detection + one-time alerting
 tests/                      Adversarial harness + test plan
 ```
 
-## The `eidolon` CLI
-
-Eidolon ships a canonical command that never silently no-ops. Every subcommand
-returns `0` on PASS, `2` on DEGRADED (loud reduced mode), and `1` on FAIL.
-
-```
-eidolon doctor              # preflight checks (JSON via --json, --model-check)
-eidolon report --since 24h  # measurable deltas: sessions, lessons, proposals, rollbacks
-eidolon rollback --dry-run  # restore from last-known-good snapshot
-eidolon version             # print semver
-```
-
-Every Eidolon component emits structured events into `$EIDOLON_HOME/events.jsonl`
-(default: `~/.hermes/state/eidolon/events.jsonl`). `eidolon report` reads that
-log and prints integers you can plot. Empty state prints zeros with a first-run
-banner — never `null`, never `N/A`.
-
 ## Install
 
-```
-pip install eidolon-hermes
-```
+Drop the `skills/` directory into your Hermes skills path and point your sessionend hook + cron at the dream-cycle and integrity-watchdog handlers. See `OPERATOR.md` for details.
 
-Or drop the `skills/` directory into your Hermes skills path and point your
-sessionend hook + cron at the dream-cycle and integrity-watchdog handlers.
-See `OPERATOR.md` for details.
-
-Verify the guarantees anytime with `python tests/adversarial.py` or
-`PYTHONPATH=src python -m unittest discover -s tests/unit -v`.
+Verify the guarantees anytime with `python tests/adversarial.py`.
 
 ## License
 

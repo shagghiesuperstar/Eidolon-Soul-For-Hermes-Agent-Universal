@@ -4,16 +4,7 @@
 Reference implementation. Wire from a Hermes sessionend hook and from cron.
 Never blocks a live session; never requires approval for low-risk changes.
 Security invariants in SOUL.md are immutable and never edited here.
-
-REC-003 / REC-004 wiring (Fable-5 critical path):
-- Emits structured events (dream.session, dream.reflect, dream.propose, ...)
-  into $EIDOLON_HOME/events.jsonl so `eidolon report` produces real numbers.
-- On the first successful run, takes a last-known-good snapshot of tracked
-  files (SOUL.md + handlers). If any invariant regresses, callers can invoke
-  `eidolon rollback` to restore.
 """
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -22,48 +13,25 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LEGACY_STATE = ROOT / "state"
-LEGACY_STATE.mkdir(exist_ok=True)
-LEGACY_LOG = LEGACY_STATE / "dream-cycle.json"
-
-# Make the sibling src/ package importable when running as a plain script.
-_SRC = ROOT / "src"
-if _SRC.exists() and str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-try:
-    from eidolon.util import events as _events  # type: ignore
-    from eidolon.safety import take_snapshot, list_snapshots  # type: ignore
-    _EIDOLON_AVAILABLE = True
-except Exception:  # noqa: BLE001 - stay backward-compatible with older installs
-    _EIDOLON_AVAILABLE = False
-
-
-def _emit(kind: str, status: str = "INFO", **payload) -> None:
-    """Emit into the Eidolon event pipeline if available; always print JSONL."""
-    rec = {"ts": time.time(), "kind": kind, "status": status, **payload}
-    print(json.dumps(rec, sort_keys=True))
-    if _EIDOLON_AVAILABLE:
-        try:
-            _events.emit(kind, status, source="skills.dream-cycle", **payload)
-        except Exception:  # noqa: BLE001 - event bus must never break the cycle
-            pass
+STATE = ROOT / "state"
+STATE.mkdir(exist_ok=True)
+LOG = STATE / "dream-cycle.json"
 
 
 def log(phase, **data):
-    """Backward-compatible wrapper for older call sites; forwards to _emit."""
-    _emit(f"dream.{phase}", **data)
-    return {"ts": time.time(), "phase": phase, **data}
+    rec = {"ts": time.time(), "phase": phase, **data}
+    print(json.dumps(rec))
+    return rec
 
 
 def load_state():
-    if LEGACY_LOG.exists():
-        return json.loads(LEGACY_LOG.read_text())
+    if LOG.exists():
+        return json.loads(LOG.read_text())
     return {"runs": [], "last_known_good": None}
 
 
 def save_state(state):
-    LEGACY_LOG.write_text(json.dumps(state, indent=2))
+    LOG.write_text(json.dumps(state, indent=2))
 
 
 def ingest(mode):
@@ -80,7 +48,7 @@ def reflect(episodes):
 
 def extract_lessons(patterns):
     # TODO: write versioned, append-mostly lessons to hindsight memory.
-    log("lesson", n=len(patterns))
+    log("extract", n=len(patterns))
     return []
 
 
@@ -129,38 +97,10 @@ def run_watchdog():
         os.system(f"{sys.executable} {wd}")
 
 
-def _ensure_first_snapshot(state) -> None:
-    """REC-004: set last_known_good on first successful run.
-
-    If Eidolon package is unavailable, we fall back to the legacy string marker
-    (state["last_known_good"] = "cycle:<ts>") so old operators still get *some*
-    breadcrumb; loud degraded mode is enforced by emitting `dream.snapshot` with
-    status=DEGRADED.
-    """
-    if _EIDOLON_AVAILABLE:
-        try:
-            if not list_snapshots():
-                snap = take_snapshot(reason="first_success")
-                state["last_known_good"] = snap.id
-                _emit("dream.snapshot", "PASS", snapshot_id=snap.id, files=list(snap.files))
-        except Exception as exc:  # noqa: BLE001
-            _emit("dream.snapshot", "DEGRADED", reason=f"{type(exc).__name__}: {exc}")
-    else:
-        if not state.get("last_known_good"):
-            state["last_known_good"] = f"cycle:{int(time.time())}"
-            _emit(
-                "dream.snapshot",
-                "DEGRADED",
-                reason="eidolon package not importable; using legacy marker only",
-            )
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["sessionend", "scheduled"], default="sessionend")
     args = ap.parse_args()
-
-    _emit("dream.session", "INFO", mode=args.mode)
 
     state = load_state()
     episodes = ingest(args.mode)
@@ -175,7 +115,6 @@ def main():
         extract_lessons(reflect(episodes))
 
     run_watchdog()
-    _ensure_first_snapshot(state)
     state["runs"].append({"ts": time.time(), "mode": args.mode})
     state["runs"] = state["runs"][-200:]
     save_state(state)
