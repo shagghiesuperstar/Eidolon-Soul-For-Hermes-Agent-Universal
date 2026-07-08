@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Nightly regression eval
+
+on:
+  schedule:
+    # 07:17 UTC daily — off-peak for GitHub Actions.
+    - cron: "17 07 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compute delta but do not commit history."
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: nightly-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Use a PAT if provided so the bot can push to protected branches.
+          token: ${{ secrets.NIGHTLY_EVAL_PAT || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run nightly eval
+        id: run
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -e
+          if [ "${DRY_RUN}" = "true" ]; then
+            PYTHONPATH=src python tests/eval/nightly.py --dry-run --seed 42
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          set +e
+          PYTHONPATH=src python tests/eval/nightly.py --seed 42
+          rc=$?
+          set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+          if [ "$rc" = "0" ] || [ "$rc" = "2" ]; then
+            # 0=clean, 2=regression detected but history still appended.
+            :
+          else
+            echo "nightly eval hard-failed (rc=$rc)"
+            exit "$rc"
+          fi
+
+      - name: Commit updated history
+        if: steps.run.outputs.dry_run != 'true'
+        run: |
+          if git diff --quiet docs/eval-history.jsonl; then
+            echo "No history changes to commit."
+            exit 0
+          fi
+          git config user.name  "eidolon-agent[bot]"
+          git config user.email "eidolon-agent@users.noreply.github.com"
+          git add docs/eval-history.jsonl
+          git commit -m "chore(eval): nightly eval history $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Open regression issue
+        if: steps.run.outputs.dry_run != 'true' && steps.run.outputs.rc == '2'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.NIGHTLY_EVAL_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            let tail = '';
+            try {
+              const lines = fs.readFileSync('docs/eval-history.jsonl', 'utf-8')
+                .trim().split(/\n/);
+              tail = lines.slice(-3).join('\n');
+            } catch (e) {
+              tail = '(unable to read docs/eval-history.jsonl)';
+            }
+            const today = new Date().toISOString().slice(0, 10);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Nightly eval regression detected on ${today}`,
+              labels: ['regression'],
+              body: [
+                'The nightly regression eval detected a > 5% drop in `pass_rate`',
+                'against the previous entry in `docs/eval-history.jsonl`.',
+                '',
+                'Recent history tail:',
+                '```json',
+                tail,
+                '```',
+                '',
+                'See workflow run: ' +
+                  `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/actions/runs/${context.runId}`,
+              ].join('\n'),
+            });
