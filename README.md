@@ -67,6 +67,17 @@ What that does:
 
 Once REC-007 (PyPI publish) lands, the one-liner becomes `pip install eidolon-hermes`.
 
+### Homebrew (macOS + Linuxbrew)
+
+After the first stable release lands on PyPI, Eidolon is also available via a Homebrew tap:
+
+```
+brew tap eidolon-hermes/eidolon
+brew install eidolon
+```
+
+See [`docs/install-brew.md`](docs/install-brew.md) for details, upgrade, and uninstall. The formula lives at `packaging/homebrew/eidolon.rb` in this repo; the tap repo mirrors it on every release.
+
 Installer environment overrides (all optional):
 
 | Var | Purpose | Default |
