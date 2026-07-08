@@ -48,6 +48,12 @@ def _cmd_rollback(args: argparse.Namespace) -> int:
     return rollback.run(dry_run=args.dry_run, json_out=args.json)
 
 
+def _cmd_verify(args: argparse.Namespace) -> int:
+    from eidolon.commands import verify
+
+    return verify.run(json_out=args.json, strict=args.strict)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="eidolon",
@@ -80,6 +86,18 @@ def _build_parser() -> argparse.ArgumentParser:
     b.add_argument("--dry-run", action="store_true", help="Report what would change; do not modify.")
     b.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     b.set_defaults(func=_cmd_rollback)
+
+    vf = sub.add_parser(
+        "verify",
+        help="Post-install end-to-end smoke test. Exercises doctor + report + rollback --dry-run.",
+    )
+    vf.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    vf.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat DEGRADED as failure (exit 2). Default folds DEGRADED into PASS.",
+    )
+    vf.set_defaults(func=_cmd_verify)
 
     return p
 
