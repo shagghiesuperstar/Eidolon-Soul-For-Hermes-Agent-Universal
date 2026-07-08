@@ -1,0 +1,2 @@
+example.com is public
+google.com

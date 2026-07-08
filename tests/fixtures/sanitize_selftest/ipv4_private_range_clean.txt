@@ -1,0 +1,2 @@
+public IP 8.8.8.8 is fine
+1.2.3.4 is not private
