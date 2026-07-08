@@ -14,6 +14,7 @@ Contract:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -30,6 +31,11 @@ def main(argv: list[str] | None = None) -> int:
         "--fixtures",
         type=str,
         default=str(_repo_root() / "tests" / "eval" / "fixtures"),
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a single JSON line with metrics (for nightly eval).",
     )
     args = parser.parse_args(argv)
 
@@ -53,16 +59,33 @@ def main(argv: list[str] | None = None) -> int:
     scores = reward.all_scores()
 
     passed = 0
+    misses = []
     for c in cases:
         s = scores.get(c.expected_winner, 0.0)
         if s > 0.0:
             passed += 1
         else:
-            print(f"MISS: case={c.case_id} winner={c.expected_winner} score={s}")
+            misses.append({"case": c.case_id, "winner": c.expected_winner, "score": s})
+            if not args.json:
+                print(f"MISS: case={c.case_id} winner={c.expected_winner} score={s}")
 
     total = len(cases)
-    print(f"{passed}/{total} cases passed (seed={args.seed})")
-    return 0 if passed == total else 1
+    rc = 0 if passed == total else 1
+
+    if args.json:
+        # Deterministic, single-line JSON — consumed by tests/eval/nightly.py.
+        payload = {
+            "schema": 1,
+            "seed": args.seed,
+            "total": total,
+            "passed": passed,
+            "pass_rate": (passed / total) if total else 0.0,
+            "misses": misses,
+        }
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"{passed}/{total} cases passed (seed={args.seed})")
+    return rc
 
 
 if __name__ == "__main__":  # pragma: no cover
