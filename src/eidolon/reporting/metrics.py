@@ -49,6 +49,7 @@ class Report:
     inference_degraded: int = 0
     bandit_arms: int = 0
     bandit_episodes: int = 0
+    preference_pairs: int = 0
     empty_state: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -135,6 +136,14 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
             r.bandit_arms = len(default_registry())
         except Exception:  # noqa: BLE001
             pass
+
+    # Fold preference-pair count from persistent store.
+    try:
+        from eidolon.learning.preferences import count as _pref_count
+
+        r.preference_pairs = _pref_count()
+    except Exception:  # noqa: BLE001 — reporting must never crash
+        pass
 
     r.empty_state = not saw_any
     if r.empty_state:
