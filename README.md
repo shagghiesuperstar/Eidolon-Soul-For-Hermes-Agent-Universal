@@ -124,6 +124,13 @@ doctor check reasons over dates, not SemVer — see
 (`.zenodo.json` at repo root is the source of truth). Prereleases skip DOI
 minting. See [RELEASING.md](RELEASING.md) for the full tagging + DOI policy.
 
+## Cite this
+
+If Eidolon supports academic work, cite it via
+[`CITATION.cff`](CITATION.cff). BibTeX and APA-style examples live in
+[`docs/citing.md`](docs/citing.md). GitHub renders the CFF as a
+"Cite this repository" widget on the project page.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

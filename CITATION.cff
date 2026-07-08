@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use Eidolon in academic work, please cite it as below."
+title: "Eidolon: Self-Improvement Soul for Hermes Agent"
+abstract: "Provider-agnostic self-improvement layer for the Hermes Agent ecosystem."
+authors:
+  - name: "Shag (Pixel Rainbow)"
+license: Apache-2.0
+repository-code: "https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal"
+keywords:
+  - hermes
+  - agent
+  - llm
+  - self-improvement
+  - eidolon
+version: "OPERATOR_INPUT_REQUIRED_ON_RELEASE_TAG"
+date-released: "OPERATOR_INPUT_REQUIRED_ON_RELEASE_TAG"
+doi: "OPERATOR_INPUT_REQUIRED_AFTER_FIRST_ZENODO_MINT"
