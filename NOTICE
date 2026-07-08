@@ -1,0 +1,19 @@
+Eidolon: Self-Improvement Soul for Hermes Agent
+Copyright 2026 Eidolon Contributors
+
+This product includes software developed at the Eidolon project
+(https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+
+THIRD-PARTY ATTRIBUTIONS
+
+At this time, Eidolon has zero runtime dependencies (stdlib-first policy; see
+pyproject.toml). When third-party runtime dependencies are introduced, their
+attributions and license notices MUST be appended to this file below this line.

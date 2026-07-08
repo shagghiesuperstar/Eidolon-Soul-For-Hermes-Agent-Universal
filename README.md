@@ -1,6 +1,7 @@
 # Eidolon — Universal Self-Improvement Layer for Hermes Agents
 
 [![adversarial](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml)
+[![installer-test](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml)
 
 Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflection, and memory loops into a disciplined, anti-fragile, self-improving system. Zero human babysitting: it runs autonomously, improves itself every session and on a schedule, and refuses to guess or gaslight. Deploy once and forget it.
 
@@ -28,12 +29,74 @@ skills/integrity-watchdog/  Drift detection + one-time alerting
 tests/                      Adversarial harness + test plan
 ```
 
+## The `eidolon` CLI
+
+Eidolon ships a canonical command that never silently no-ops. Every subcommand
+returns `0` on PASS, `2` on DEGRADED (loud reduced mode), and `1` on FAIL.
+
+```
+eidolon doctor              # preflight checks (JSON via --json, --model-check)
+eidolon verify              # post-install end-to-end CLI smoke test (--json, --strict)
+eidolon report --since 24h  # measurable deltas: sessions, lessons, proposals, rollbacks
+eidolon rollback --dry-run  # restore from last-known-good snapshot
+eidolon version             # print semver
+```
+
+Every Eidolon component emits structured events into `$EIDOLON_HOME/events.jsonl`
+(default: `~/.hermes/state/eidolon/events.jsonl`). `eidolon report` reads that
+log and prints integers you can plot. Empty state prints zeros with a first-run
+banner — never `null`, never `N/A`.
+
 ## Install
 
-Drop the `skills/` directory into your Hermes skills path and point your sessionend hook + cron at the dream-cycle and integrity-watchdog handlers. See `OPERATOR.md` for details.
+One-liner (macOS + Linux, Python 3.10–3.13):
 
-Verify the guarantees anytime with `python tests/adversarial.py`.
+```
+curl -fsSL https://raw.githubusercontent.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/main/install.sh | bash
+```
+
+What that does:
+
+1. Detects Python 3.10–3.13 (aborts loudly if absent — no silent guessing).
+2. `pip install --user` the `eidolon-hermes` package from the pinned git ref.
+3. Runs `eidolon doctor` at the end. If doctor says FAIL, the installer
+   exits non-zero. If DEGRADED (no host Hermes yet), install succeeds and
+   the operator is told exactly why.
+
+Once REC-007 (PyPI publish) lands, the one-liner becomes `pip install eidolon-hermes`.
+
+Installer environment overrides (all optional):
+
+| Var | Purpose | Default |
+|---|---|---|
+| `EIDOLON_REF` | Git ref to install | `main` |
+| `EIDOLON_METHOD` | `pip` or `src` (clone-then-install) | `pip` |
+| `EIDOLON_PYTHON` | Interpreter to bind to | Auto-detected |
+| `EIDOLON_SKIP_DOCTOR` | `1` skips the final doctor gate | `0` |
+| `HERMES_HOME` | Host Hermes home | `$HOME/.hermes` |
+| `EIDOLON_HOME` | Eidolon state root | `$HERMES_HOME/state/eidolon` |
+
+After install, verify anytime:
+
+```
+eidolon doctor            # environment health
+eidolon verify --strict   # end-to-end CLI smoke; --strict promotes DEGRADED to exit 2
+python tests/adversarial.py                              # S1–S3 guarantees
+PYTHONPATH=src python -m unittest discover -s tests/unit # full unit suite
+```
+
+Don't want the installer script? Drop the `skills/` directory into your
+Hermes skills path and point your sessionend hook + cron at the
+dream-cycle and integrity-watchdog handlers. See `OPERATOR.md`.
+
+## Releases & DOI
+
+Eidolon uses SemVer (`vX.Y.Z`); host Hermes uses CalVer. The `hermes_version`
+doctor check reasons over dates, not SemVer — see
+`src/eidolon/checks/hermes_version.py`. Stable tags are minted on Zenodo
+(`.zenodo.json` at repo root is the source of truth). Prereleases skip DOI
+minting. See [RELEASING.md](RELEASING.md) for the full tagging + DOI policy.
 
 ## License
 
-Apache License 2.0.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
