@@ -15,6 +15,23 @@ EXIT_DEGRADED = 2
 
 def run(*, dry_run: bool = False, json_out: bool = False) -> int:
     result = rollback_to_last_known_good(dry_run=dry_run)
+
+    # REC-009: emit a preference pair on a real (non-dry-run) rollback.
+    # Prior state is preferred over current-broken state. Context is a
+    # structural digest of the file set — never raw content.
+    if not dry_run and result.ok and result.restored:
+        try:
+            from eidolon.learning.preferences import emit_rollback_event
+
+            file_digest = "|".join(sorted(result.restored))
+            emit_rollback_event(
+                prior_state_id="last_known_good",
+                current_state_id="pre_rollback",
+                context=f"rollback:{file_digest}",
+            )
+        except Exception:  # noqa: BLE001 — emission must never break rollback
+            pass
+
     if json_out:
         json.dump(result.as_dict(), sys.stdout, sort_keys=True)
         sys.stdout.write("\n")
