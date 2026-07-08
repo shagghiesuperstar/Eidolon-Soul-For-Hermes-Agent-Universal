@@ -1,0 +1,28 @@
+# DO NOT commit real values here; these are patterns to detect them.
+# Format: fixed-shape YAML parsed by scripts/sanitize_check.py (stdlib-only).
+# Each entry:
+#   - name: <identifier>
+#     regex: '<python regex>'
+#     exclude_paths: [<path prefix>, ...]   # optional
+patterns:
+  - name: absolute_user_path
+    regex: '/(Users|home)/[a-z0-9_-]{2,}/'
+    exclude_paths: [tests/, docs/, master_EIDOLON_roadmap]
+  - name: ipv4_private_range
+    regex: '\b(10|192\.168|172\.(1[6-9]|2[0-9]|3[0-1]))\.[0-9]{1,3}\.[0-9]{1,3}\b'
+    exclude_paths: [tests/, docs/]
+  - name: local_hostname
+    regex: '\b[a-z0-9-]+\.local\b'
+    exclude_paths: [tests/, docs/]
+  - name: agent_id_placeholder
+    regex: '\b(hermes|eidolon)-[a-z0-9]{6,}-[a-z0-9]{4,}\b'
+    exclude_paths: [tests/, docs/]
+  - name: aws_access_key
+    regex: '\bAKIA[0-9A-Z]{16}\b'
+    exclude_paths: [master_EIDOLON_roadmap, docs/, tests/]
+  - name: pypi_token
+    regex: '\bpypi-[A-Za-z0-9_-]{50,}\b'
+    exclude_paths: [master_EIDOLON_roadmap, docs/, tests/]
+  - name: github_token
+    regex: '\bghp_[A-Za-z0-9]{36}\b'
+    exclude_paths: [master_EIDOLON_roadmap, docs/, tests/]

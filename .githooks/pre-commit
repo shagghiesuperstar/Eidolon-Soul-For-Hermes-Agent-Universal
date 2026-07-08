@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# REC-011 pre-commit guard: mirrors sanitize.yml locally.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+# Bypass in emergencies with --no-verify (CI still enforces).
+
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+    echo "pre-commit: python not found; skipping sanitize scan" >&2
+    exit 0
+fi
+
+PY="$(command -v python3 || command -v python)"
+
+# Self-test first: catches broken patterns before scanning the repo.
+"$PY" "$REPO_ROOT/scripts/sanitize_check.py" --self-test >/dev/null || {
+    echo "pre-commit: sanitize self-test failed; run: python scripts/sanitize_check.py --self-test" >&2
+    exit 1
+}
+
+if ! "$PY" "$REPO_ROOT/scripts/sanitize_check.py"; then
+    echo "" >&2
+    echo "pre-commit: PII sanitization scan found matches (see above)." >&2
+    echo "  Fix the leak, or add a pattern-scoped exclude to .sanitize-patterns.yml." >&2
+    echo "  Bypass (not recommended): git commit --no-verify" >&2
+    exit 1
+fi
+
+exit 0

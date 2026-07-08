@@ -1,0 +1,3 @@
+some text without paths
+/etc/hosts is not a user path
+/usr/local/bin
