@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-from eidolon.checks import CheckResult, FAIL, PASS
+from eidolon.checks import CheckResult, DEGRADED, FAIL, PASS
 
 _MIN_PATTERNS = 5
 
@@ -44,18 +44,26 @@ def check() -> CheckResult:
     patterns_path = root / ".sanitize-patterns.yml"
 
     if not patterns_path.exists():
+        # Repo-hygiene check: only meaningful in the source repo. When installed
+        # via pip/Homebrew there is no .sanitize-patterns.yml on disk — this is
+        # a DEGRADED state (repo-only CI feature unavailable), not a FAIL.
         return CheckResult(
             name="pii_patterns_loaded",
-            status=FAIL,
-            reason=f"missing {patterns_path.name}",
+            status=DEGRADED,
+            reason=(
+                f"{patterns_path.name} not present (repo-only CI feature; "
+                "safe to ignore for pip/brew installs)."
+            ),
         )
 
     scanner, scanner_path = _load_scanner_module()
     if scanner is None:
+        # Scanner script also repo-only. If patterns exist but scanner doesn't,
+        # that's a repo inconsistency — still not a runtime blocker.
         return CheckResult(
             name="pii_patterns_loaded",
-            status=FAIL,
-            reason=f"cannot import {scanner_path.name}",
+            status=DEGRADED,
+            reason=f"cannot import {scanner_path.name} (repo-only CI helper).",
         )
 
     try:

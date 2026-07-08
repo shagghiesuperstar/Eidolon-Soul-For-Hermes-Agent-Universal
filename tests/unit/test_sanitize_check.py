@@ -170,6 +170,23 @@ class DoctorCheckTests(unittest.TestCase):
         names = [fn().name for fn in registry()]
         self.assertIn("pii_patterns_loaded", names)
 
+    def test_missing_patterns_yields_degraded_not_fail(self) -> None:
+        """Installed via pip/brew there is no .sanitize-patterns.yml.
+        Doctor must not block on this repo-only CI feature.
+        """
+        from unittest import mock
+        from pathlib import Path
+        import tempfile
+        from eidolon.checks import pii_patterns_loaded as _mod
+
+        with tempfile.TemporaryDirectory() as td:
+            # Point _repo_root at an empty tempdir so patterns file is absent.
+            with mock.patch.object(_mod, "_repo_root", return_value=Path(td)):
+                result = _mod.check()
+            self.assertEqual(result.status, "DEGRADED", result.reason)
+            self.assertEqual(result.name, "pii_patterns_loaded")
+            self.assertIn("sanitize-patterns.yml", result.reason)
+
 
 class WorkflowFileTests(unittest.TestCase):
     def test_sanitize_workflow_exists(self) -> None:
