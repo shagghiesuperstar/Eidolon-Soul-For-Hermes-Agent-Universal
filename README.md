@@ -89,6 +89,20 @@ Don't want the installer script? Drop the `skills/` directory into your
 Hermes skills path and point your sessionend hook + cron at the
 dream-cycle and integrity-watchdog handlers. See `OPERATOR.md`.
 
+## PII sanitization hook (REC-011)
+
+CI runs `scripts/sanitize_check.py` on every PR. To catch leaks locally
+before they hit CI, wire up the pre-commit hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Add a new pattern by appending to `.sanitize-patterns.yml`; the reader is
+stdlib-only. Every pattern MUST ship with `<name>_positive.txt` and
+`<name>_clean.txt` fixtures under `tests/fixtures/sanitize_selftest/`.
+Bypass with `git commit --no-verify` only in emergencies — CI still enforces.
+
 ## Releases & DOI
 
 Eidolon uses SemVer (`vX.Y.Z`); host Hermes uses CalVer. The `hermes_version`

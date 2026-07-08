@@ -65,6 +65,7 @@ def registry() -> List[CheckFn]:
         hermes_version,
         hooks_wired,
         learning_bandit_ready,
+        pii_patterns_loaded,
         preferences_schema,
         provider_capability,
         risk_classifier_ready,
@@ -82,4 +83,5 @@ def registry() -> List[CheckFn]:
         safe(learning_bandit_ready.check),
         safe(preferences_schema.check),
         safe(risk_classifier_ready.check),
+        safe(pii_patterns_loaded.check),
     ]
