@@ -64,6 +64,7 @@ def registry() -> List[CheckFn]:
         hermes_config,
         hermes_version,
         hooks_wired,
+        learning_bandit_ready,
         provider_capability,
         soul_present,
         state_dir,
@@ -76,4 +77,5 @@ def registry() -> List[CheckFn]:
         safe(state_dir.check),
         safe(hooks_wired.check),
         safe(provider_capability.check),
+        safe(learning_bandit_ready.check),
     ]

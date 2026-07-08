@@ -47,6 +47,8 @@ class Report:
     last_doctor_status: str = "UNKNOWN"
     inference_requests: int = 0
     inference_degraded: int = 0
+    bandit_arms: int = 0
+    bandit_episodes: int = 0
     empty_state: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -107,6 +109,32 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
             r.inference_requests += 1
         elif kind == "inference.degraded":
             r.inference_degraded += 1
+        elif kind == "learn.step":
+            arms = rec.get("arms", 0)
+            if isinstance(arms, int) and arms > r.bandit_arms:
+                r.bandit_arms = arms
+            iters = rec.get("iterations", 0)
+            if isinstance(iters, int):
+                r.bandit_episodes += iters
+
+    # Fold in-file replay buffer counter (survives event log rotation).
+    try:
+        from eidolon.learning.replay import count as _replay_count
+
+        stored = _replay_count()
+        if stored > r.bandit_episodes:
+            r.bandit_episodes = stored
+    except Exception:  # noqa: BLE001 — reporting must never crash
+        pass
+
+    # Non-empty arm registry counts even without episodes yet.
+    if r.bandit_arms == 0:
+        try:
+            from eidolon.learning.arms import default_registry
+
+            r.bandit_arms = len(default_registry())
+        except Exception:  # noqa: BLE001
+            pass
 
     r.empty_state = not saw_any
     if r.empty_state:
