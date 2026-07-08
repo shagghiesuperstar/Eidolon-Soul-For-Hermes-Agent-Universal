@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from tests.unit._tmphomes import IsolatedHome
 
@@ -54,7 +56,13 @@ class DoctorTests(IsolatedHome):
         import hashlib
         from eidolon.learning.preferences import log_pair
         log_pair("a", "b", "bandit", hashlib.sha256(b"seed").hexdigest(), ts=1.0)
-        code, out = self._run(["doctor", "--json", "--model-check"])
+
+        # REC-016: the python_version check returns DEGRADED on Python > 3.13
+        # ("above tested matrix"). Pin the check to a supported version so
+        # this test remains a wiring test, not a Python-version test.
+        from eidolon.checks import python_version as _pv
+        with mock.patch.object(_pv, "_current_version", return_value=(3, 12)):
+            code, out = self._run(["doctor", "--json", "--model-check"])
         data = json.loads(out.strip().splitlines()[-1])
         self.assertEqual(code, 0, f"expected PASS overall, got: {data}")
         self.assertEqual(data["overall"], "PASS")
