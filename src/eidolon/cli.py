@@ -54,6 +54,15 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return verify.run(json_out=args.json, strict=args.strict)
 
 
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from eidolon.mcp import server as _mcp
+
+    if args.mcp_command != "serve":
+        print("mcp: only 'serve' is supported in v1", file=sys.stderr)
+        return EXIT_USAGE
+    return _mcp.run_forever(port=args.port)
+
+
 def _cmd_learn(args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -130,6 +139,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Use wall-clock ts instead of the CI-stable hash-derived ts.",
     )
     ln.set_defaults(func=_cmd_learn)
+
+    mcp = sub.add_parser(
+        "mcp",
+        help="Run the Eidolon MCP server (stdlib-only, 127.0.0.1).",
+    )
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", metavar="MCP_COMMAND")
+    mcp_sub.required = True
+    serve = mcp_sub.add_parser("serve", help="Bind to 127.0.0.1 and serve JSON-RPC.")
+    serve.add_argument(
+        "--port",
+        type=int,
+        required=True,
+        help="Port to bind on 127.0.0.1. No default; operator picks one.",
+    )
+    mcp.set_defaults(func=_cmd_mcp)
 
     return p
 
