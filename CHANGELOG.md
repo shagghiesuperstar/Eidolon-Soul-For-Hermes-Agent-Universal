@@ -9,6 +9,14 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **REC-017** `src/eidolon/commands/skill.py`: `eidolon skill promote/demote/retire/status`
+  CLI subcommands wired against the lifecycle state machine and shadow evaluator.
+  Exit codes: 0=PASS, 1=FAIL, 2=DEGRADED, 64=usage. State persisted in
+  `<eidolon_state_dir>/skill-state.json`.
+- **REC-017** `src/eidolon/cli.py`: nested `skill` subparser (mirrors `mcp` pattern).
+- **REC-017** `docs/skill-lifecycle.md`: updated — CLI is live; state store path documented.
+- 18 new unit tests in `tests/unit/test_skill_cli.py` covering all four verbs,
+  all exit codes, JSON output, unmet-criteria blocking, and idempotency.
 - **REC-017** `src/eidolon/skills/` package: `ShadowEvaluator`, `ShadowResult`,
   and the `shadow` / `active` / `retired` lifecycle state machine
   (`lifecycle.py`). A MEDIUM-risk skill proposal must pass shadow eval before
