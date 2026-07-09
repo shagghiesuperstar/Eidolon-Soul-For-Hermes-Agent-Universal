@@ -51,13 +51,16 @@ banner — never `null`, never `N/A`.
 
 ## Install
 
-One-liner (macOS + Linux, Python 3.10–3.13):
+One-liner (macOS + Linux + WSL2, Python 3.10–3.13):
 
 ```
 curl -fsSL https://raw.githubusercontent.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/main/install.sh | bash
 ```
 
-What that does:
+**Windows:** Native Windows is not supported. Use WSL2 (Ubuntu 22.04 or
+24.04 LTS), since Hermes Agent itself runs under WSL2.
+
+What the installer does:
 
 1. Detects Python 3.10–3.13 (aborts loudly if absent — no silent guessing).
 2. `pip install --user` the `eidolon-hermes` package from the pinned git ref.
