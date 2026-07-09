@@ -57,9 +57,8 @@ One-liner (macOS + Linux + WSL2, Python 3.10–3.13):
 curl -fsSL https://raw.githubusercontent.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/main/install.sh | bash
 ```
 
-**Windows:** Native Windows is not supported. Eidolon is supported on
-Windows exclusively via WSL2 (Ubuntu 22.04 or 24.04 LTS recommended),
-since Hermes Agent itself runs under WSL2.
+**Windows:** Native Windows is not supported. Use WSL2 (Ubuntu 22.04 or
+24.04 LTS), since Hermes Agent itself runs under WSL2.
 
 What the installer does:
 
