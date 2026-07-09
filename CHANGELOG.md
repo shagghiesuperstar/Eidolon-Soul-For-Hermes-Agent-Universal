@@ -8,18 +8,47 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **P0 — Learning loop write-only bug (PR #31):** `ThompsonBandit` always
+  started with uniform priors. `replay.jsonl` was append-only; posteriors were
+  never hydrated on startup. Added `hydrate_bandit(bandit, records)` pure
+  function to `replay.py` and wired it into `commands/learn.py` immediately
+  after bandit init. `replay_hydrated` and `replay_orphaned` counts now
+  surface in the `learn.step` event and JSON stdout. Root cause of canary
+  symptom: 139 dream runs, zero durable learning.
+- **`CITATION.cff` sentinel restore:** `version` and `date-released` restored
+  to `OPERATOR_INPUT_REQUIRED_ON_RELEASE_TAG` so `bump-citation` CI job owns
+  these fields at tag-push time. Fixes `test_placeholders_present`.
+
 ### Added
-- **REC-017** `src/eidolon/skills/` package: `ShadowEvaluator`, `ShadowResult`,
-  and the `shadow` / `active` / `retired` lifecycle state machine
-  (`lifecycle.py`). A MEDIUM-risk skill proposal must pass shadow eval before
-  it can be promoted; a regressing skill is blocked even at high bandit
-  posterior (adversarial invariant tested in `tests/unit/test_shadow_eval.py`).
+- **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
+  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
+- **Shadow eval infrastructure (PR #25 / REC-017):** `src/eidolon/skills/`
+  package: `ShadowEvaluator`, `ShadowResult`, and the `shadow` / `active` /
+  `retired` lifecycle state machine (`lifecycle.py`). A MEDIUM-risk skill
+  proposal must pass shadow eval before it can be promoted; a regressing skill
+  is blocked even at high bandit posterior (adversarial invariant tested in
+  `tests/unit/test_shadow_eval.py`).
 - **REC-017** `src/eidolon/checks/shadow_eval_ready.py`: new doctor check
   verifying `ShadowEvaluator` imports and instantiates cleanly. Doctor now
   reports 13 checks.
 - **REC-017** `docs/skill-lifecycle.md`: operator reference for shadow eval,
   promotion criteria, manifest schema, and state transitions.
 - 14 new unit tests in `tests/unit/test_shadow_eval.py`.
+- **`ACKNOWLEDGMENTS.md` (PR #27):** Canonical intellectual lineage —
+  PromptQuine (arXiv:2506.17930), Yao Meta-Skill, CavemanLLM, Anthropic
+  soul-document pattern, CL4R1T4S, SophosAI CAMLIS 2025, memory provider
+  ecosystem, design-pattern credits. All links verified 2026-07-09.
+- **`PHILOSOPHY.md` (PR #28):** Origins, Quine Principle, Five Principles
+  failure-mode provenance, Measurable-Improvement Thesis, §13 non-goals mirror.
+- **`README.md` Philosophy & Lineage paragraph (PR #30):** Links
+  `PHILOSOPHY.md` and `ACKNOWLEDGMENTS.md`; cites PromptQuine, Yao Meta-Skill,
+  soul-document pattern. States non-goals inline (no PPO, no telemetry, no GUI).
+
+### Changed
+- **`docs/compatibility.md` + `README.md` (PR #29):** Windows row set to FAIL
+  across all Python columns; explicit WSL2-only paragraph added. §13 non-goals
+  sweep: leaderboard/telemetry/GUI/PPO/marketplace all absent.
 
 ---
 
