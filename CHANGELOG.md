@@ -1,30 +1,55 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to Eidolon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning: [SemVer](https://semver.org/).
 
+---
+
 ## [Unreleased]
 
-### Added — REC-017: Shadow evaluation for skill promotion/demotion
+### Added
+- **REC-017** `src/eidolon/skills/` package: `ShadowEvaluator`, `ShadowResult`,
+  and the `shadow` / `active` / `retired` lifecycle state machine
+  (`lifecycle.py`). A MEDIUM-risk skill proposal must pass shadow eval before
+  it can be promoted; a regressing skill is blocked even at high bandit
+  posterior (adversarial invariant tested in `tests/unit/test_shadow_eval.py`).
+- **REC-017** `src/eidolon/checks/shadow_eval_ready.py`: new doctor check
+  verifying `ShadowEvaluator` imports and instantiates cleanly. Doctor now
+  reports 13 checks.
+- **REC-017** `docs/skill-lifecycle.md`: operator reference for shadow eval,
+  promotion criteria, manifest schema, and state transitions.
+- 14 new unit tests in `tests/unit/test_shadow_eval.py`.
 
-- `src/eidolon/skills/shadow.py` — `ShadowEvaluator` scores a candidate arm
-  against the regression fixture set (in-process, stdlib-only, no network).
-  Returns `ShadowResult(status, score, reason, arm_id, threshold)`.
-  `MEDIUM`-risk proposals must pass shadow evaluation before any application.
-- `src/eidolon/skills/lifecycle.py` — `promote` / `demote` / `retire` state
-  machine.  `check_promotion_criteria` enforces `min_shadow_sessions`,
-  `min_bandit_posterior`, and `regression_suite_pass_rate` from `manifest.yml`.
-  **Adversarial invariant**: a skill that regresses on the eval suite cannot
-  be promoted even with a high bandit posterior.
-- `src/eidolon/checks/shadow_eval_ready.py` — doctor check; registered in
-  `checks/__init__.py`.
-- `tests/unit/test_shadow_eval.py` — 14 unit tests covering PASS, FAIL,
-  DEGRADED, boundary, adversarial, manifest parsing, and risk-class gating.
+---
 
-### Changed
+## [1.0.0] — 2026-07-01
 
-- `src/eidolon/checks/__init__.py` — `shadow_eval_ready` check appended to
-  `registry()`.  Doctor now reports 13 checks on a fully wired host.
+### Added
+- `eidolon` CLI with subcommands: `doctor`, `verify`, `report`, `rollback`,
+  `version`, `learn`, `mcp serve`.
+- `src/eidolon/checks/` framework: 12 preflight checks covering soul contract,
+  Hermes config/version, Python version, hooks, provider capability, bandit
+  readiness, preference schema, risk classifier, PII patterns, and state dir.
+- `src/eidolon/learning/`: `EpsilonGreedyBandit`, `RegressionReward`,
+  `load_fixtures`, `ReplayBuffer`, preference learning, and `LearningSchemas`.
+- `src/eidolon/safety/`: `RiskClass` enum (LOW / MEDIUM / HIGH / NEVER_TOUCH)
+  with `is_auto_applyable()` enforcement.
+- `src/eidolon/inference/`: provider capability tier detection.
+- `src/eidolon/reporting/`: event ledger reader powering `eidolon report`.
+- `src/eidolon/mcp/`: stdlib-only JSON-RPC MCP server (`eidolon mcp serve`).
+- `scripts/sanitize_check.py` + `.sanitize-patterns.yml`: CI PII gate; pre-commit
+  hook via `.githooks/pre-commit`.
+- `tests/adversarial.py`: S1–S3 safety guarantees (no silent no-op, risk gating,
+  rollback integrity).
+- `install.sh`: one-liner installer with doctor gate and env-var overrides.
+- `SOUL.md`, `OPERATOR.md`, `RELEASING.md`: identity contract, operator guide,
+  release policy.
+- Zenodo DOI metadata (`.zenodo.json`), `CITATION.cff`, `docs/citing.md`.
+- CI workflows: `adversarial.yml`, `installer-test.yml`, `release.yml`.
+- Homebrew tap formula (`packaging/homebrew/eidolon.rb`).
+- `docs/`: `compatibility.md`, `eval.md`, `install-brew.md`, `mcp.md`,
+  `risk-model.md`.
 
-<!-- Previous releases will appear here as PRs are merged and tagged. -->
+[Unreleased]: https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/releases/tag/v1.0.0
