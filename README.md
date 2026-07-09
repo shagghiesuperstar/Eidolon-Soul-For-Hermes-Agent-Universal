@@ -22,6 +22,15 @@ Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflectio
 4. **Autonomous.** Self-improvement requires zero approvals and zero reminders.
 5. **Immutable safety.** Security invariants are never modified by self-improvement.
 
+## Philosophy & Lineage
+
+Eidolon's design descends from prompt-distillation research (PromptQuine, Wang et al.,
+ICML 2025), the Yao Meta-Skill doctrine for structured skill lifecycles, and the
+soul-document pattern for intrinsic agent values. The learning path is bandit-based
+exploration graduating to DPO — no PPO, no telemetry, no GUI. For the full
+intellectual story, see [PHILOSOPHY.md](PHILOSOPHY.md) and
+[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
 ## Layout
 ```
 SOUL.md                     Identity + operating contract (plain, no seal)
