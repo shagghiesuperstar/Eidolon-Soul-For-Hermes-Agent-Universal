@@ -19,14 +19,19 @@ checks enforce it at runtime.
 | Ubuntu 22.04 / 24.04 LTS   | PASS until 2027-01-01, then DEGRADED | PASS        | PASS        | PASS        | DEGRADED     |
 | Debian 12                  | PASS until 2027-01-01, then DEGRADED | PASS        | PASS        | PASS        | DEGRADED     |
 | Alpine (musl)              | DEGRADED (untested libc)             | DEGRADED    | DEGRADED    | DEGRADED    | DEGRADED     |
-| Windows (native)           | DEGRADED (WSL preferred)             | DEGRADED    | DEGRADED    | DEGRADED    | DEGRADED     |
+| Windows (native)           | FAIL                                 | FAIL        | FAIL        | FAIL        | FAIL         |
+
+**Windows:** Native Windows is not supported. Eidolon is supported on
+Windows exclusively via WSL2 (Ubuntu 22.04 or 24.04 LTS recommended),
+since Hermes Agent itself runs under WSL2. Native Windows paths, checks,
+and CI are out of scope.
 
 Python < 3.10 is a hard **FAIL** on every OS; the installer refuses to run
 and the `python_version` check enforces it again at doctor time.
 
 ## Hermes freshness
 
-The `hermes_version` doctor check (shipped in PR #2) reasons over Hermes's
+The `hermes_version` doctor check reasons over Hermes's
 CalVer date, not a SemVer number. Policy:
 
 - `hermes.version` within 90 days of today → **PASS**.
