@@ -70,6 +70,7 @@ def registry() -> List[CheckFn]:
         provider_capability,
         python_version,
         risk_classifier_ready,
+        shadow_eval_ready,
         soul_present,
         state_dir,
     )
@@ -87,4 +88,5 @@ def registry() -> List[CheckFn]:
         safe(preferences_schema.check),
         safe(risk_classifier_ready.check),
         safe(pii_patterns_loaded.check),
+        safe(shadow_eval_ready.check),
     ]
