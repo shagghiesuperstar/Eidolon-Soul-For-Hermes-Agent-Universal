@@ -45,7 +45,7 @@ def _cmd_version(_args: argparse.Namespace) -> int:
 def _cmd_rollback(args: argparse.Namespace) -> int:
     from eidolon.commands import rollback
 
-    return rollback.run(dry_run=args.dry_run, json_run=args.json)
+    return rollback.run(dry_run=args.dry_run, json_out=args.json)
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
