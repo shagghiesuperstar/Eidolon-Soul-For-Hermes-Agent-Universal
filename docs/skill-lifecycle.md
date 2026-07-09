@@ -43,8 +43,7 @@ candidate arm against the regression fixture set.
 ### How it works
 
 1. The evaluator reads all `*.jsonl` files under the fixtures directory
-   (`$EIDOLON_HOME/fixtures/` by default, or the path the dream-cycle handler
-   supplies).
+   (`$EIDOLON_HOME/fixtures/` by default, overridable with `--fixtures`).
 2. It computes a **weighted regression pass rate** for the candidate arm:
    `score = Σ(weight * hit) / Σ(weight)` where `hit = 1` if the arm is the
    fixture's `expected_winner`.
@@ -101,13 +100,11 @@ promotion regardless of the other two.
 
 ## CLI Reference
 
-> **Note:** `eidolon skill promote/demote/status` ship in the next PR
-> (`feat/rec-017-skill-cli`). The state machine and shadow evaluator are live
-> now; this section documents the intended interface.
-
 ```
 eidolon skill status <name>          # print current state + last eval score
-eidolon skill promote <name>         # run shadow eval + criteria check; exit 0 on success
+eidolon skill promote <name>         # run shadow eval + criteria check; exit 0 on PASS
+eidolon skill promote <name> --manifest <path>   # explicit manifest.yml location
+eidolon skill promote <name> --fixtures <path>   # explicit fixtures dir
 eidolon skill demote <name>          # move active → shadow; exit 0
 eidolon skill retire <name>          # move any state → retired; exit 0
 eidolon skill promote <name> --json  # machine-readable output
@@ -115,6 +112,14 @@ eidolon skill promote <name> --json  # machine-readable output
 
 All subcommands exit `0` (PASS), `1` (FAIL / blocked), or `2` (DEGRADED).
 They never silently succeed when a criterion is unmet.
+
+### Skill state store
+
+State is persisted in `<eidolon_state_dir>/skill-state.json` — a flat JSON
+mapping of skill name to current state token. The file is readable and
+editable by operators in an emergency, but normal mutations go through the
+CLI. The `eidolon_state_dir` is `$EIDOLON_HOME` if set, else
+`$HERMES_HOME/state/eidolon`, else `~/.hermes/state/eidolon`.
 
 ---
 
@@ -129,30 +134,34 @@ eidolon doctor
 [PASS] shadow_eval_ready  ShadowEvaluator ready; default threshold=0.8
 ```
 
-If this check shows `FAIL`, shadow eval is broken and MEDIUM-risk proposals
-will be blocked (degraded loudly). Fix the import error before promoting any
-skill.
+If this check shows `FAIL`, shadow eval is broken and `eidolon skill promote`
+will exit `2` (DEGRADED). Fix the import error before promoting any skill.
 
 ---
 
 ## Operator FAQ
 
-**Q: My skill has a high bandit score but keeps failing shadow eval.**  
+**Q: My skill has a high bandit score but keeps failing shadow eval.**
 A: The regression fixture set is the ground truth. Add or fix fixtures so they
 correctly label your skill as the expected winner for the cases it handles.
 Do not lower the `regression_suite_pass_rate` threshold as a workaround —
 that weakens the adversarial invariant.
 
-**Q: Can I skip shadow eval for a LOW-risk skill?**  
+**Q: Can I skip shadow eval for a LOW-risk skill?**
 A: Yes. LOW-risk changes are auto-applyable (`RiskClass.LOW.is_auto_applyable()
 == True`) and skip the shadow gate entirely.
 
-**Q: Can I promote a skill from a CI script?**  
+**Q: Can I promote a skill from a CI script?**
 A: `eidolon skill promote <name>` exits non-zero on any unmet criterion,
 making it safe to run in CI. Pipe `--json` output to your pipeline's
 artifact store for auditability.
 
-**Q: Where are the regression fixtures stored?**  
+**Q: Where are the regression fixtures stored?**
 A: Default: `$EIDOLON_HOME/fixtures/` (typically
-`~/.hermes/state/eidolon/fixtures/`). Override by setting `EIDOLON_FIXTURES_DIR`
-or passing `--fixtures <path>` to `eidolon skill promote`.
+`~/.hermes/state/eidolon/fixtures/`). Override with `--fixtures <path>`
+or the `EIDOLON_FIXTURES_DIR` environment variable.
+
+**Q: How do I check what state all my skills are in?**
+A: Read `<eidolon_state_dir>/skill-state.json` directly, or run
+`eidolon skill status <name>` (or `--json`) for each skill. A `skill list`
+command is planned for a follow-up release.
