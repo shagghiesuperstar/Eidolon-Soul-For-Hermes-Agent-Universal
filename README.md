@@ -22,6 +22,15 @@ Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflectio
 4. **Autonomous.** Self-improvement requires zero approvals and zero reminders.
 5. **Immutable safety.** Security invariants are never modified by self-improvement.
 
+## Philosophy & Lineage
+
+Eidolon's design descends from prompt-distillation research (PromptQuine, Wang et al.,
+ICML 2025), the Yao Meta-Skill doctrine for structured skill lifecycles, and the
+soul-document pattern for intrinsic agent values. The learning path is bandit-based
+exploration graduating to DPO — no PPO, no telemetry, no GUI. For the full
+intellectual story, see [PHILOSOPHY.md](PHILOSOPHY.md) and
+[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
 ## Layout
 ```
 SOUL.md                     Identity + operating contract (plain, no seal)
@@ -51,13 +60,16 @@ banner — never `null`, never `N/A`.
 
 ## Install
 
-One-liner (macOS + Linux, Python 3.10–3.13):
+One-liner (macOS + Linux + WSL2, Python 3.10–3.13):
 
 ```
 curl -fsSL https://raw.githubusercontent.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/main/install.sh | bash
 ```
 
-What that does:
+**Windows:** Native Windows is not supported. Use WSL2 (Ubuntu 22.04 or
+24.04 LTS), since Hermes Agent itself runs under WSL2.
+
+What the installer does:
 
 1. Detects Python 3.10–3.13 (aborts loudly if absent — no silent guessing).
 2. `pip install --user` the `eidolon-hermes` package from the pinned git ref.
