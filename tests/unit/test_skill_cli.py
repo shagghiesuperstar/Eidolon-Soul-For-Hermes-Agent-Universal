@@ -36,22 +36,28 @@ def _make_manifest(d: Path, name: str = "test-skill", version: str = "1.0.0",
 
 
 def _make_fixtures(d: Path, name: str, score: float) -> Path:
-    """Write a synthetic fixtures/arm.jsonl that gives `name` the target score."""
+    """Write synthetic fixtures matching RegressionCase schema for `name`."""
     fixtures = d / "fixtures"
     fixtures.mkdir(parents=True, exist_ok=True)
     f = fixtures / "arm.jsonl"
-    # Two cases: first hit (weight=1), second miss (weight=1) -> score=0.5
-    # Override with single hit (weight=1) -> score=1.0, or miss -> 0.0
+
+    def case(case_id: str, winner: str) -> str:
+        return json.dumps({
+            "case_id": case_id,
+            "category": "prompt_construction",
+            "context_hash": "0" * 64,
+            "arm_inputs": {name: {"prompt": "x"}, "other": {"prompt": "y"}},
+            "expected_winner": winner,
+            "reward_weight": 1.0,
+        })
+
+    # score>=1.0: single hit; score<=0.0: single miss; else one hit + one miss
     if score >= 1.0:
-        lines = [json.dumps({"expected_winner": name, "weight": 1})]
+        lines = [case("rc-hit", name)]
     elif score <= 0.0:
-        lines = [json.dumps({"expected_winner": "other", "weight": 1})]
+        lines = [case("rc-miss", "other")]
     else:
-        # score=0.5: one hit, one miss
-        lines = [
-            json.dumps({"expected_winner": name, "weight": 1}),
-            json.dumps({"expected_winner": "other", "weight": 1}),
-        ]
+        lines = [case("rc-hit", name), case("rc-miss", "other")]
     f.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return fixtures
 

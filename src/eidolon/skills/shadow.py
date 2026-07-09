@@ -16,6 +16,8 @@ live in the dream-cycle handler; this module only scores and reports.
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -115,7 +117,7 @@ class ShadowEvaluator:
                 arm_id=arm_id,
                 threshold=self._threshold,
             )
-        except ValueError as exc:
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             return ShadowResult(
                 status=DEGRADED,
                 score=-1.0,
