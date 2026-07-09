@@ -80,6 +80,18 @@ def _cmd_learn(args: argparse.Namespace) -> int:
     )
 
 
+def _cmd_skill(args: argparse.Namespace) -> int:
+    from eidolon.commands import skill
+
+    return skill.run(
+        verb=args.skill_command,
+        name=args.name,
+        manifest=getattr(args, "manifest", None),
+        fixtures=getattr(args, "fixtures", None),
+        json_out=args.json,
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="eidolon",
@@ -154,6 +166,35 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Port to bind on 127.0.0.1. No default; operator picks one.",
     )
     mcp.set_defaults(func=_cmd_mcp)
+
+    sk = sub.add_parser(
+        "skill",
+        help="Manage skill lifecycle: promote / demote / retire / status.",
+    )
+    sk_sub = sk.add_subparsers(dest="skill_command", metavar="SKILL_COMMAND")
+    sk_sub.required = True
+
+    for _verb, _help in (
+        ("promote", "Run shadow eval + criteria check; transition shadow -> active."),
+        ("demote", "Move active -> shadow (re-enters evaluation)."),
+        ("retire", "Move any state -> retired (never auto-applied again)."),
+        ("status", "Print current lifecycle state and last eval score."),
+    ):
+        _p = sk_sub.add_parser(_verb, help=_help)
+        _p.add_argument("name", help="Skill name (must match manifest.yml 'name' field).")
+        _p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+        if _verb == "promote":
+            _p.add_argument(
+                "--manifest",
+                default=None,
+                help="Path to manifest.yml. Default: <eidolon_state_dir>/skills/<name>/manifest.yml",
+            )
+            _p.add_argument(
+                "--fixtures",
+                default=None,
+                help="Path to fixtures dir. Default: <eidolon_state_dir>/fixtures",
+            )
+        _p.set_defaults(func=_cmd_skill)
 
     return p
 
