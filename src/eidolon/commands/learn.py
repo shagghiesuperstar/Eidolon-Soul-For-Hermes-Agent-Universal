@@ -8,10 +8,12 @@ Contract:
   same replay.jsonl bytes (except `ts` field, which we hash-derive from
   seed+iteration to keep the buffer bit-stable in CI).
 - Writes to `$EIDOLON_HOME/replay.jsonl` via `learning.replay.append`.
+- On startup, hydrates bandit posteriors from the existing replay buffer
+  so learning is durable across sessions (fixes write-only buffer bug).
 
 Exit codes:
   0 — all requested iterations completed
-  2 — completed with DEGRADED signal (e.g. no fixtures found)
+  2 — completed with DEGRADED signal (e.g. no fixtures found, orphaned records)
   1 — hard failure
 """
 
@@ -29,6 +31,7 @@ from typing import Optional
 from eidolon.learning import arms as arms_mod
 from eidolon.learning.bandit import ThompsonBandit
 from eidolon.learning.replay import append as replay_append
+from eidolon.learning.replay import hydrate_bandit, iter_records
 from eidolon.learning.rewards import RegressionReward, load_fixtures
 from eidolon.learning.schemas import EpisodeRecord
 from eidolon.util import events
@@ -103,6 +106,22 @@ def run(
 
     bandit = ThompsonBandit(bandit_arms, rng=random.Random(seed))
 
+    # Hydrate posteriors from persisted replay so learning is durable
+    # across sessions.  Unknown arm ids are counted as orphaned; we emit
+    # DEGRADED (loud) if any exist rather than silently discarding them.
+    replay_hydrated, replay_orphaned = hydrate_bandit(bandit, iter_records())
+    degraded = False
+    if replay_orphaned:
+        degraded = True
+        events.emit(
+            "learn.degraded",
+            events.STATUS_DEGRADED,
+            source="commands.learn",
+            reason="replay_orphaned_records",
+            replay_hydrated=replay_hydrated,
+            replay_orphaned=replay_orphaned,
+        )
+
     for i in range(iterations):
         picked = bandit.sample_arm()
         r = reward.for_arm(picked)
@@ -152,6 +171,8 @@ def run(
         arms=len(bandit_arms),
         posterior_means=posterior,
         selection_counts=counts,
+        replay_hydrated=replay_hydrated,
+        replay_orphaned=replay_orphaned,
     )
     print(
         json.dumps(
@@ -161,11 +182,13 @@ def run(
                 "arms": bandit_arms,
                 "posterior_means": posterior,
                 "selection_counts": counts,
+                "replay_hydrated": replay_hydrated,
+                "replay_orphaned": replay_orphaned,
             },
             sort_keys=True,
         )
     )
-    return EXIT_OK
+    return EXIT_DEGRADED if degraded else EXIT_OK
 
 
 def build_parser(sub: argparse._SubParsersAction) -> None:  # pragma: no cover - wiring
