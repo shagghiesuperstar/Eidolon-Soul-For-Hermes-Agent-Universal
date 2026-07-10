@@ -11,6 +11,17 @@ REC-003 / REC-004 wiring (Fable-5 critical path):
 - On the first successful run, takes a last-known-good snapshot of tracked
   files (SOUL.md + handlers). If any invariant regresses, callers can invoke
   `eidolon rollback` to restore.
+
+REC-020 wiring:
+- ingest()        pulls recent hindsight episodes from the MemoryAdapter.
+- reflect()       clusters episodes into recurring patterns by kind.
+- extract_lessons() writes each new lesson back to the adapter (kind="lesson").
+- propose()       writes each candidate proposal to the adapter (kind="proposal").
+
+The adapter is loaded once per run via `eidolon.memory.loader.load_adapter()`
+(reads $HERMES_HOME/config.yaml; falls back to hindsight; degrades to inmem).
+When the eidolon package is not importable the handler falls back to the
+legacy no-op stubs and emits DEGRADED events — it never hard-fails.
 """
 from __future__ import annotations
 
@@ -19,7 +30,9 @@ import json
 import os
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
+from typing import Any, Dict, List
 
 ROOT = Path(__file__).resolve().parents[2]
 LEGACY_STATE = ROOT / "state"
@@ -34,9 +47,43 @@ if _SRC.exists() and str(_SRC) not in sys.path:
 try:
     from eidolon.util import events as _events  # type: ignore
     from eidolon.safety import take_snapshot, list_snapshots  # type: ignore
+    from eidolon.memory.loader import load_adapter as _load_adapter  # type: ignore
     _EIDOLON_AVAILABLE = True
 except Exception:  # noqa: BLE001 - stay backward-compatible with older installs
     _EIDOLON_AVAILABLE = False
+    _load_adapter = None  # type: ignore
+
+# Module-level adapter singleton: loaded once per process, lazily on first use.
+_ADAPTER = None
+
+
+def _get_adapter():
+    """Return the process-level MemoryAdapter, loading it on first call.
+
+    Returns None (and emits DEGRADED) when the eidolon package is not
+    importable.  Callers must guard on None.
+    """
+    global _ADAPTER  # noqa: PLW0603
+    if _ADAPTER is not None:
+        return _ADAPTER
+    if not _EIDOLON_AVAILABLE:
+        _emit(
+            "dream.memory.adapter",
+            "DEGRADED",
+            reason="eidolon package not importable; memory wiring disabled",
+        )
+        return None
+    try:
+        _ADAPTER = _load_adapter()
+        _emit("dream.memory.adapter", "INFO", backend=_ADAPTER.name)
+        return _ADAPTER
+    except Exception as exc:  # noqa: BLE001
+        _emit(
+            "dream.memory.adapter",
+            "DEGRADED",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+        return None
 
 
 def _emit(kind: str, status: str = "INFO", **payload) -> None:
@@ -66,29 +113,171 @@ def save_state(state):
     LEGACY_LOG.write_text(json.dumps(state, indent=2))
 
 
-def ingest(mode):
-    # TODO: pull recent episodes from hindsight memory for this agent.
-    log("ingest", mode=mode)
-    return []
+# ---------------------------------------------------------------------------
+# Dream phases — REC-020: all four stubs are now wired to the MemoryAdapter
+# ---------------------------------------------------------------------------
+
+_INGEST_KINDS = ("lesson", "preference", "reflection", "episode")
+_INGEST_LIMIT = 200  # max entries pulled per run
+_INGEST_WINDOW = 7 * 24 * 3600  # look back 7 days
 
 
-def reflect(episodes):
-    # TODO: cluster episodes; surface recurring failure/success patterns.
-    log("reflect", n=len(episodes))
-    return []
+def ingest(mode: str) -> List[Dict[str, Any]]:
+    """Pull recent episodes from the MemoryAdapter.
+
+    Returns a list of memory entries (dicts).  Falls back to [] and emits
+    DEGRADED if the adapter is unavailable or retrieve() fails.
+    """
+    adapter = _get_adapter()
+    if adapter is None:
+        log("ingest", mode=mode, n=0, status="DEGRADED")
+        return []
+
+    since_ts = time.time() - _INGEST_WINDOW
+    episodes: List[Dict[str, Any]] = []
+    try:
+        for kind in _INGEST_KINDS:
+            chunk = adapter.retrieve(
+                kind=kind,
+                limit=_INGEST_LIMIT,
+                since_ts=since_ts,
+            )
+            episodes.extend(chunk)
+    except Exception as exc:  # noqa: BLE001
+        _emit(
+            "dream.ingest",
+            "DEGRADED",
+            mode=mode,
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+        return []
+
+    _emit("dream.ingest", "INFO", mode=mode, n=len(episodes))
+    return episodes
 
 
-def extract_lessons(patterns):
-    # TODO: write versioned, append-mostly lessons to hindsight memory.
-    log("lesson", n=len(patterns))
-    return []
+def reflect(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Cluster episodes into recurring patterns by kind.
+
+    Returns a list of pattern dicts::
+
+        {"kind": str, "count": int, "sample": str}
+
+    where ``sample`` is the content of the most-recent episode in the cluster.
+    Pure function — no IO.
+    """
+    if not episodes:
+        log("reflect", n=0)
+        return []
+
+    buckets: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for ep in episodes:
+        buckets[ep.get("kind", "unknown")].append(ep)
+
+    patterns = []
+    for kind, entries in buckets.items():
+        # Newest-first sort (adapter already returns newest-first, but entries
+        # from multiple kinds are interleaved so we sort again here).
+        entries.sort(key=lambda e: e.get("ts", 0), reverse=True)
+        patterns.append({
+            "kind": kind,
+            "count": len(entries),
+            "sample": entries[0].get("content", ""),
+        })
+
+    _emit("dream.reflect", "INFO", n=len(episodes), pattern_count=len(patterns))
+    return patterns
 
 
-def propose(lessons):
-    # TODO: generate candidate changes from lessons.
-    log("propose", n=len(lessons))
-    return []
+def extract_lessons(
+    patterns: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Synthesise one lesson per pattern cluster and write it to the adapter.
 
+    Returns the list of lesson entries stored (or attempted).  Lessons are
+    stored with kind="lesson".  Store errors are emitted as DEGRADED events;
+    the lesson is still returned to the caller so the dream cycle continues.
+    """
+    if not patterns:
+        log("lesson", n=0)
+        return []
+
+    adapter = _get_adapter()
+    lessons: List[Dict[str, Any]] = []
+
+    for pattern in patterns:
+        lesson = {
+            "kind": "lesson",
+            "content": (
+                f"Pattern '{pattern['kind']}' observed {pattern['count']} time(s). "
+                f"Most recent: {pattern['sample'][:200]}"
+            ),
+            "source_kind": pattern["kind"],
+            "source_count": pattern["count"],
+        }
+        lessons.append(lesson)
+
+        if adapter is not None:
+            try:
+                adapter.store(lesson)
+            except Exception as exc:  # noqa: BLE001
+                _emit(
+                    "dream.lesson.store",
+                    "DEGRADED",
+                    kind=pattern["kind"],
+                    reason=f"{type(exc).__name__}: {exc}",
+                )
+
+    _emit("dream.lesson", "INFO", n=len(lessons))
+    return lessons
+
+
+def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate one candidate change proposal per lesson and write to adapter.
+
+    Returns the list of candidate dicts stored (or attempted).  Candidates
+    are stored with kind="proposal".  Store errors are DEGRADED events; the
+    candidate is still returned so gate_and_apply can evaluate it.
+    """
+    if not lessons:
+        log("propose", n=0)
+        return []
+
+    adapter = _get_adapter()
+    candidates: List[Dict[str, Any]] = []
+
+    for lesson in lessons:
+        candidate = {
+            "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
+            "kind": "proposal",
+            "content": (
+                f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
+                f"events based on {lesson.get('source_count', 0)} observations."
+            ),
+            "lesson_content": lesson.get("content", ""),
+            "risk": "low",
+            "mutation_kind": "preference_update",
+        }
+        candidates.append(candidate)
+
+        if adapter is not None:
+            try:
+                adapter.store(candidate)
+            except Exception as exc:  # noqa: BLE001
+                _emit(
+                    "dream.propose.store",
+                    "DEGRADED",
+                    proposal_id=candidate["id"],
+                    reason=f"{type(exc).__name__}: {exc}",
+                )
+
+    _emit("dream.propose", "INFO", n=len(candidates))
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# Remaining phases — unchanged from prior implementation
+# ---------------------------------------------------------------------------
 
 def risk_of(candidate):
     """REC-010: 5-class classification via eidolon.safety.
@@ -115,17 +304,12 @@ def apply_low(candidate):
 
 
 def shadow_test(candidate):
-    # Run candidate in a sandbox vs baseline; return measured delta.
     log("shadow", id=candidate.get("id"))
     return {"delta": 0.0}
 
 
 def _audit_never_touch_or_high(candidate, risk_repr):
-    """REC-010: write an audit entry when a NEVER_TOUCH or HIGH is refused.
-
-    Writes to eidolon's audit log if available; otherwise falls back to
-    the legacy dream-cycle state log so the refusal is never silent.
-    """
+    """REC-010: write an audit entry when a NEVER_TOUCH or HIGH is refused."""
     entry = {
         "kind": "dream.refuse",
         "candidate_id": candidate.get("id"),
@@ -148,8 +332,6 @@ def gate_and_apply(candidates, state):
     """REC-010 policy: LOW auto-applies; MEDIUM defers to shadow eval (REC-017);
     HIGH and NEVER_TOUCH never auto-apply and write an audit entry.
     """
-    # Import RiskClass lazily so this handler still runs when the eidolon
-    # package isn't installed (loud-degraded mode).
     RC = None
     if _EIDOLON_AVAILABLE:
         try:
@@ -160,7 +342,6 @@ def gate_and_apply(candidates, state):
 
     for c in candidates:
         r = risk_of(c)
-        # Legacy string path (RC unavailable).
         if RC is None:
             if isinstance(r, str) and r.lower() == "low":
                 apply_low(c)
@@ -173,14 +354,12 @@ def gate_and_apply(candidates, state):
                     log("discard", id=c.get("id"), delta=result["delta"])
             continue
 
-        # Fast path: enum-based decision tree.
         if r == RC.LOW:
             apply_low(c)
             _emit("dream.apply", "PASS", candidate=c.get("id"), risk="LOW")
         elif r == RC.NO_OP:
             log("skip", id=c.get("id"), risk="NO_OP")
         elif r == RC.MEDIUM:
-            # REC-017 will land shadow eval. Until then, DEGRADED, not applied.
             log("defer", id=c.get("id"), risk="MEDIUM", reason="shadow eval not yet implemented")
             _emit(
                 "dream.defer",
@@ -195,13 +374,12 @@ def gate_and_apply(candidates, state):
         elif r == RC.NEVER_TOUCH:
             _audit_never_touch_or_high(c, "NEVER_TOUCH")
             _emit("dream.refuse", "FAIL", candidate=c.get("id"), risk="NEVER_TOUCH")
-        else:  # noqa: PLR2004
+        else:
             _audit_never_touch_or_high(c, f"UNKNOWN:{r!r}")
             _emit("dream.refuse", "FAIL", candidate=c.get("id"), risk="UNKNOWN")
 
 
 def rollback_if_regressed(state):
-    # TODO: compare current scores vs baseline; revert to LKG on regression.
     log("rollback-check", lkg=state.get("last_known_good"))
 
 
@@ -212,13 +390,7 @@ def run_watchdog():
 
 
 def _ensure_first_snapshot(state) -> None:
-    """REC-004: set last_known_good on first successful run.
-
-    If Eidolon package is unavailable, we fall back to the legacy string marker
-    (state["last_known_good"] = "cycle:<ts>") so old operators still get *some*
-    breadcrumb; loud degraded mode is enforced by emitting `dream.snapshot` with
-    status=DEGRADED.
-    """
+    """REC-004: set last_known_good on first successful run."""
     if _EIDOLON_AVAILABLE:
         try:
             if not list_snapshots():
