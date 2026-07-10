@@ -399,7 +399,35 @@ def risk_of(candidate):
 
 
 def apply_low(candidate):
-    log("apply", id=candidate.get("id"), risk="low")
+    """Persist a LOW-risk apply to a measurable ledger under $EIDOLON_HOME.
+
+    Writes one JSONL line to applied_proposals.jsonl and appends a short
+    line to applied_lessons.md so `eidolon report` / operators can prove
+    applies happened. Never touches SOUL.md or config.yaml.
+    """
+    rec = {
+        "ts": time.time(),
+        "id": candidate.get("id"),
+        "mutation_kind": candidate.get("mutation_kind"),
+        "content": (candidate.get("content") or "")[:500],
+        "risk": "LOW",
+    }
+    home = Path(os.environ.get("EIDOLON_HOME", str(Path.home() / ".hermes" / "state" / "eidolon")))
+    home.mkdir(parents=True, exist_ok=True)
+    ledger = home / "applied_proposals.jsonl"
+    try:
+        with ledger.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        md = home / "applied_lessons.md"
+        with md.open("a", encoding="utf-8") as fh:
+            fh.write(f"- [{rec['ts']:.0f}] {rec['id']}: {rec['content'][:200]}\n")
+    except OSError as exc:
+        _emit("dream.apply.write", "DEGRADED", reason=f"{type(exc).__name__}: {exc}")
+        log("apply", id=candidate.get("id"), risk="low", write="failed")
+        return
+    log("apply", id=candidate.get("id"), risk="low", write="ok", ledger=str(ledger))
 
 
 def shadow_test(candidate):
