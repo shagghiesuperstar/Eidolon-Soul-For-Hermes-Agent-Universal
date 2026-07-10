@@ -96,10 +96,40 @@ class InferenceRouter:
 
     @staticmethod
     def _normalise(entry: dict) -> dict:
+        """Normalise host cache entries.
+
+        Accepts two shapes:
+        1. Eidolon/explicit: {tier, capabilities, context_window}
+        2. Hermes-native picker cache: {fp, at, models: [...]}  (no caps/ctx)
+
+        For Hermes-native entries with a non-empty models list we infer a
+        conservative Tier-A capability set (json_mode) and a 128k context
+        floor. We never invent provider keys — only enrich real host entries.
+        Explicit fields always win over inference.
+        """
+        caps_raw = entry.get("capabilities", None)
+        if caps_raw is None:
+            models = entry.get("models")
+            # Hermes cache: models list present => modern chat provider.
+            if isinstance(models, list) and len(models) > 0:
+                caps = frozenset({CAP_JSON})
+            else:
+                caps = frozenset()
+        else:
+            caps = frozenset(caps_raw or ())
+
+        ctx = int(entry.get("context_window", 0) or 0)
+        if ctx <= 0:
+            models = entry.get("models")
+            if isinstance(models, list) and len(models) > 0:
+                # Safe floor for current Hermes providers (all multi-model
+                # chat APIs in the cache are well above Tier-A 8k).
+                ctx = 128_000
+
         return {
             "tier": entry.get("tier", TIER_A),
-            "capabilities": frozenset(entry.get("capabilities", ()) or ()),
-            "context_window": int(entry.get("context_window", 0) or 0),
+            "capabilities": caps,
+            "context_window": ctx,
         }
 
     # -------------------------------------------------------------- accessors

@@ -107,6 +107,32 @@ class RouterTests(IsolatedHome):
         with self.assertRaises(RouterError):
             InferenceRouter.from_hermes()
 
+    def test_hermes_native_cache_resolves_tier_a(self) -> None:
+        """Hermes picker cache uses {fp,at,models} not {capabilities,context_window}."""
+        from eidolon.inference import InferenceRouter
+        from eidolon.inference.tiers import TIER_A, MIN_CAPABILITIES
+
+        router = InferenceRouter.from_dict({
+            "xai-oauth": {
+                "fp": "abc",
+                "at": 1.0,
+                "models": ["grok-4.5", "grok-4"],
+            }
+        })
+        match = router.resolve(tier=TIER_A, requires=MIN_CAPABILITIES)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.provider, "xai-oauth")
+        self.assertIn("json_mode", match.capabilities)
+        self.assertGreaterEqual(match.context_window, 8000)
+
+    def test_hermes_native_empty_models_does_not_fake_caps(self) -> None:
+        from eidolon.inference import InferenceRouter
+        from eidolon.inference.tiers import TIER_A, MIN_CAPABILITIES
+
+        router = InferenceRouter.from_dict({
+            "empty": {"fp": "x", "at": 1.0, "models": []}
+        })
+        self.assertIsNone(router.resolve(tier=TIER_A, requires=MIN_CAPABILITIES))
 
 if __name__ == "__main__":
     unittest.main()
