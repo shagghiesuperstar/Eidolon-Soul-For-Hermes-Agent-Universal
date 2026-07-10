@@ -5,11 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]  # tests/unit -> repo root
 sys.path.insert(0, str(ROOT / "src"))
 
 # Import the handler functions we're testing.
 import importlib
+import importlib.util
 import types
 
 # We need to import handler.py as a module.

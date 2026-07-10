@@ -224,7 +224,7 @@ def extract_lessons(
                 _emit(
                     "dream.lesson.store",
                     "DEGRADED",
-                    kind=pattern["kind"],
+                    pattern_kind=pattern["kind"],
                     reason=f"{type(exc).__name__}: {exc}",
                 )
 
