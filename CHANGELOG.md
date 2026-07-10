@@ -25,11 +25,26 @@ Versioning: [SemVer](https://semver.org/).
   - Adapter is loaded once per process via `_get_adapter()` using
     `eidolon.memory.loader.load_adapter()`. When unavailable, all four
     functions degrade loudly and return their zero-state (empty list).
-- **`tests/unit/test_dream_memory_adapter.py` (REC-020):** 8 tests covering
+- **`tests/unit/test_dream_memory_adapter.py` (REC-020):** 9 tests covering
   `ingest` with unavailable adapter, core recall gate (REC-020 critical path),
   reflect clustering, reflect sample ordering, `extract_lessons` write-path,
   `extract_lessons` store-fail degrade, `propose` write-path, and `propose`
-  store-fail degrade. All FAILED before this commit, all PASS after.
+  store-fail degrade.
+
+- **Transactional outbox — `src/eidolon/outbox.py` (REC-019):** Crash-safe
+  capture + idempotent flush layer between the dream cycle and any
+  `MemoryAdapter` backend.  `Outbox.capture` appends to
+  `$EIDOLON_HOME/outbox/pending.jsonl` (atomic line-append; each entry
+  carries a 16-hex `_eid` for idempotency).  `Outbox.flush(adapter)` drains
+  the pending file into the adapter exactly once, rewrites the file
+  atomically via `os.replace`, and returns a `FlushResult(flushed, skipped,
+  failed)`.  A crash mid-flush replays cleanly on next cycle; duplicate
+  entries (adapter raises `"duplicate"` / `"exists"`) are skipped, not
+  failed.  Stdlib-only; no new dependencies.
+- **`tests/unit/test_outbox.py` (REC-019):** 10 unit tests covering capture,
+  missing-field validation, pending count, flush-exactly-once, backend
+  failure retention, duplicate-skip, and partial-failure isolation.  All
+  FAILED before this commit, all PASS after.
 
 ### Fixed
 - **P0 — Learning loop write-only bug (PR #31):** `ThompsonBandit` always
@@ -45,15 +60,28 @@ Versioning: [SemVer](https://semver.org/).
 
 ### Added (prior)
 - **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
-  posteriors survive session backwards. Both FAILED before the fix, PASS after.
-- **Shadow eval infrastructure (PR #25 / REC-017).**
-- **`ACKNOWLEDGMENTS.md` (PR #27).**
-- **`PHILOSOPHY.md` (PR #28).**
-- **`README.md` Philosophy & Lineage paragraph (PR #30).**
+  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
+- **Shadow eval infrastructure (PR #25 / REC-017):** `src/eidolon/skills/`
+  package: `ShadowEvaluator`, `ShadowResult`, and the `shadow` / `active` /
+  `retired` lifecycle state machine (`lifecycle.py`). A MEDIUM-risk skill
+  proposal must pass shadow eval before it can be promoted; a regressing skill
+  is blocked even at high bandit posterior (adversarial invariant tested in
+  `tests/unit/test_shadow_eval.py`).
+- **REC-017** `src/eidolon/checks/shadow_eval_ready.py`: new doctor check
+  verifying `ShadowEvaluator` imports and instantiates cleanly. Doctor now
+  reports 13 checks.
+- **REC-017** `docs/skill-lifecycle.md`: operator reference for shadow eval,
+  promotion criteria, manifest schema, and state transitions.
+- 14 new unit tests in `tests/unit/test_shadow_eval.py`.
+- **`ACKNOWLEDGMENTS.md` (PR #27):** Canonical intellectual lineage.
+- **`PHILOSOPHY.md` (PR #28):** Origins, Quine Principle, Five Principles
+  failure-mode provenance, Measurable-Improvement Thesis, §13 non-goals mirror.
+- **`README.md` Philosophy & Lineage paragraph (PR #30):** Links
+  `PHILOSOPHY.md` and `ACKNOWLEDGMENTS.md`.
 
 ### Changed
-- **`docs/compatibility.md` + `README.md` (PR #29):** Windows row set to FAIL;
-  WSL2-only paragraph added.
+- **`docs/compatibility.md` + `README.md` (PR #29):** Windows row set to FAIL
+  across all Python columns; explicit WSL2-only paragraph added.
 
 ---
 
@@ -62,19 +90,26 @@ Versioning: [SemVer](https://semver.org/).
 ### Added
 - `eidolon` CLI with subcommands: `doctor`, `verify`, `report`, `rollback`,
   `version`, `learn`, `mcp serve`.
-- `src/eidolon/checks/` framework: 12 preflight checks.
+- `src/eidolon/checks/` framework: 12 preflight checks covering soul contract,
+  Hermes config/version, Python version, hooks, provider capability, bandit
+  readiness, preference schema, risk classifier, PII patterns, and state dir.
 - `src/eidolon/learning/`: `EpsilonGreedyBandit`, `RegressionReward`,
   `load_fixtures`, `ReplayBuffer`, preference learning, and `LearningSchemas`.
-- `src/eidolon/safety/`: `RiskClass` enum with `is_auto_applyable()`.
+- `src/eidolon/safety/`: `RiskClass` enum (LOW / MEDIUM / HIGH / NEVER_TOUCH)
+  with `is_auto_applyable()` enforcement.
 - `src/eidolon/inference/`: provider capability tier detection.
 - `src/eidolon/reporting/`: event ledger reader powering `eidolon report`.
-- `src/eidolon/mcp/`: stdlib-only JSON-RPC MCP server.
-- `scripts/sanitize_check.py` + `.sanitize-patterns.yml`: CI PII gate.
-- `tests/adversarial.py`: S1–S3 safety guarantees.
-- `install.sh`, `SOUL.md`, `OPERATOR.md`, `RELEASING.md`.
-- Zenodo DOI metadata, `CITATION.cff`, `docs/citing.md`.
+- `src/eidolon/mcp/`: stdlib-only JSON-RPC MCP server (`eidolon mcp serve`).
+- `scripts/sanitize_check.py` + `.sanitize-patterns.yml`: CI PII gate; pre-commit
+  hook via `.githooks/pre-commit`.
+- `tests/adversarial.py`: S1–S3 safety guarantees (no silent no-op, risk gating,
+  rollback integrity).
+- `install.sh`: one-liner installer with doctor gate and env-var overrides.
+- `SOUL.md`, `OPERATOR.md`, `RELEASING.md`: identity contract, operator guide,
+  release policy.
+- Zenodo DOI metadata (`.zenodo.json`), `CITATION.cff`, `docs/citing.md`.
 - CI workflows: `adversarial.yml`, `installer-test.yml`, `release.yml`.
-- Homebrew tap formula.
+- Homebrew tap formula (`packaging/homebrew/eidolon.rb`).
 - `docs/`: `compatibility.md`, `eval.md`, `install-brew.md`, `mcp.md`,
   `risk-model.md`.
 
