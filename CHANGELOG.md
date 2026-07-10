@@ -8,6 +8,19 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Transactional outbox (REC-019):** `src/eidolon/outbox.py` — crash-safe
+  two-phase capture → flush pipeline for lessons and proposals.
+  `capture()` appends to `$EIDOLON_HOME/outbox/pending.jsonl` with
+  fsync; `flush()` drains to `events.jsonl` exactly once then truncates
+  pending.  Crash between capture and flush replays safely on next
+  flush.  Thread-safe via per-instance lock.  Degrades loudly (DEGRADED
+  event) on any OS error; never raises to caller.
+- **`tests/unit/test_outbox.py`:** 8 tests; all FAILED before this
+  commit (module did not exist), all PASS after.  Covers: append,
+  flush-exactly-once, crash-resume, empty-flush no-op, kind filter,
+  missing-field drop, ts auto-stamp, DEGRADED event on bad path.
+
 ### Fixed
 - **P0 — Learning loop write-only bug (PR #31):** `ThompsonBandit` always
   started with uniform priors. `replay.jsonl` was append-only; posteriors were
@@ -20,9 +33,7 @@ Versioning: [SemVer](https://semver.org/).
   to `OPERATOR_INPUT_REQUIRED_ON_RELEASE_TAG` so `bump-citation` CI job owns
   these fields at tag-push time. Fixes `test_placeholders_present`.
 
-### Added
-- **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
-  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
+### Added (prior unreleased)
 - **Shadow eval infrastructure (PR #25 / REC-017):** `src/eidolon/skills/`
   package: `ShadowEvaluator`, `ShadowResult`, and the `shadow` / `active` /
   `retired` lifecycle state machine (`lifecycle.py`). A MEDIUM-risk skill
@@ -44,6 +55,8 @@ Versioning: [SemVer](https://semver.org/).
 - **`README.md` Philosophy & Lineage paragraph (PR #30):** Links
   `PHILOSOPHY.md` and `ACKNOWLEDGMENTS.md`; cites PromptQuine, Yao Meta-Skill,
   soul-document pattern. States non-goals inline (no PPO, no telemetry, no GUI).
+- **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
+  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
 
 ### Changed
 - **`docs/compatibility.md` + `README.md` (PR #29):** Windows row set to FAIL
