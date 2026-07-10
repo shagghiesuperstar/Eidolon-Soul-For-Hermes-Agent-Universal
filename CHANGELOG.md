@@ -9,6 +9,9 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **Hermes-native provider cache:** infer json_mode + 128k context from non-empty models lists so doctor provider_capability PASSes on real hosts.
+
+### Fixed
 - **Proposal auto-apply path:** `mutation_kind=preference_update` is now RiskClass.LOW
   (was fail-closed HIGH). `apply_low` writes `applied_proposals.jsonl` + `applied_lessons.md`
   under `$EIDOLON_HOME` so applies are measurable (never touches SOUL/config).
