@@ -9,6 +9,28 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Dream-cycle MemoryAdapter wiring — REC-020:** All four TODO stubs in
+  `skills/dream-cycle/handler.py` are now wired to the `MemoryAdapter`:
+  - `ingest()` calls `adapter.retrieve(kind=..., limit=200, since_ts=<7d>)` for
+    each of `lesson`, `preference`, `reflection`, `episode` and returns the
+    merged list.
+  - `reflect()` clusters episodes by `kind`, sorts newest-first, and returns
+    one `{kind, count, sample}` pattern dict per cluster. Pure function; no IO.
+  - `extract_lessons()` synthesises one lesson per pattern and calls
+    `adapter.store(kind="lesson", ...)` for each. Store failures emit DEGRADED
+    events; the lesson is still returned so the cycle continues.
+  - `propose()` generates one candidate proposal per lesson and calls
+    `adapter.store(kind="proposal", ...)`. Store failures are DEGRADED events;
+    the candidate is still returned for `gate_and_apply`.
+  - Adapter is loaded once per process via `_get_adapter()` using
+    `eidolon.memory.loader.load_adapter()`. When unavailable, all four
+    functions degrade loudly and return their zero-state (empty list).
+- **`tests/unit/test_dream_memory_adapter.py` (REC-020):** 9 tests covering
+  `ingest` with unavailable adapter, core recall gate (REC-020 critical path),
+  reflect clustering, reflect sample ordering, `extract_lessons` write-path,
+  `extract_lessons` store-fail degrade, `propose` write-path, and `propose`
+  store-fail degrade.
+
 - **Transactional outbox — `src/eidolon/outbox.py` (REC-019):** Crash-safe
   capture + idempotent flush layer between the dream cycle and any
   `MemoryAdapter` backend.  `Outbox.capture` appends to
