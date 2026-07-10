@@ -13,10 +13,15 @@ REC-003 / REC-004 wiring (Fable-5 critical path):
   `eidolon rollback` to restore.
 
 REC-020 wiring:
-- ingest()        pulls recent hindsight episodes from the MemoryAdapter.
-- reflect()       clusters episodes into recurring patterns by kind.
-- extract_lessons() writes each new lesson back to the adapter (kind="lesson").
-- propose()       writes each candidate proposal to the adapter (kind="proposal").
+- ingest()          pulls recent hindsight episodes from the MemoryAdapter.
+- reflect()         clusters episodes into recurring patterns by kind.
+- extract_lessons() captures each lesson via Outbox then flushes to adapter.
+- propose()         captures each proposal via Outbox then flushes to adapter.
+
+REC-021 wiring:
+- extract_lessons() and propose() now go through Outbox.capture + flush so
+  entries survive a mid-cycle crash.  On flush failure the cycle emits
+  DEGRADED but still returns results — it never hard-fails.
 
 The adapter is loaded once per run via `eidolon.memory.loader.load_adapter()`
 (reads $HERMES_HOME/config.yaml; falls back to hindsight; degrades to inmem).
@@ -48,13 +53,16 @@ try:
     from eidolon.util import events as _events  # type: ignore
     from eidolon.safety import take_snapshot, list_snapshots  # type: ignore
     from eidolon.memory.loader import load_adapter as _load_adapter  # type: ignore
+    from eidolon.outbox import Outbox as _Outbox  # type: ignore
     _EIDOLON_AVAILABLE = True
 except Exception:  # noqa: BLE001 - stay backward-compatible with older installs
     _EIDOLON_AVAILABLE = False
     _load_adapter = None  # type: ignore
+    _Outbox = None  # type: ignore
 
-# Module-level adapter singleton: loaded once per process, lazily on first use.
+# Module-level singletons: loaded once per process, lazily on first use.
 _ADAPTER = None
+_OUTBOX = None
 
 
 def _get_adapter():
@@ -80,6 +88,34 @@ def _get_adapter():
     except Exception as exc:  # noqa: BLE001
         _emit(
             "dream.memory.adapter",
+            "DEGRADED",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+        return None
+
+
+def _get_outbox():
+    """Return the process-level Outbox, creating it on first call.
+
+    Returns None (and emits DEGRADED) when the eidolon package is not
+    importable.  Callers must guard on None and fall back to direct store.
+    """
+    global _OUTBOX  # noqa: PLW0603
+    if _OUTBOX is not None:
+        return _OUTBOX
+    if not _EIDOLON_AVAILABLE or _Outbox is None:
+        _emit(
+            "dream.outbox",
+            "DEGRADED",
+            reason="eidolon package not importable; outbox disabled",
+        )
+        return None
+    try:
+        _OUTBOX = _Outbox()
+        return _OUTBOX
+    except Exception as exc:  # noqa: BLE001
+        _emit(
+            "dream.outbox",
             "DEGRADED",
             reason=f"{type(exc).__name__}: {exc}",
         )
@@ -114,7 +150,7 @@ def save_state(state):
 
 
 # ---------------------------------------------------------------------------
-# Dream phases — REC-020: all four stubs are now wired to the MemoryAdapter
+# Dream phases
 # ---------------------------------------------------------------------------
 
 _INGEST_KINDS = ("lesson", "preference", "reflection", "episode")
@@ -176,8 +212,6 @@ def reflect(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     patterns = []
     for kind, entries in buckets.items():
-        # Newest-first sort (adapter already returns newest-first, but entries
-        # from multiple kinds are interleaved so we sort again here).
         entries.sort(key=lambda e: e.get("ts", 0), reverse=True)
         patterns.append({
             "kind": kind,
@@ -192,17 +226,23 @@ def reflect(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def extract_lessons(
     patterns: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Synthesise one lesson per pattern cluster and write it to the adapter.
+    """Synthesise one lesson per pattern cluster and write it via the outbox.
 
-    Returns the list of lesson entries stored (or attempted).  Lessons are
-    stored with kind="lesson".  Store errors are emitted as DEGRADED events;
-    the lesson is still returned to the caller so the dream cycle continues.
+    REC-021: each lesson is captured to the crash-safe outbox first, then
+    flushed to the adapter in the same call.  If flush fails the lesson
+    survives in the pending file for the next cycle; a DEGRADED event is
+    emitted but the lesson is still returned so the dream cycle continues.
+
+    When the outbox is unavailable (eidolon not importable) the code falls
+    back to the previous direct adapter.store path so the handler degrades
+    gracefully on older installs.
     """
     if not patterns:
         log("lesson", n=0)
         return []
 
     adapter = _get_adapter()
+    outbox = _get_outbox()
     lessons: List[Dict[str, Any]] = []
 
     for pattern in patterns:
@@ -217,7 +257,37 @@ def extract_lessons(
         }
         lessons.append(lesson)
 
-        if adapter is not None:
+        if outbox is not None and adapter is not None:
+            # REC-021 path: capture to crash-safe buffer, then flush to backend.
+            try:
+                outbox.capture(lesson)
+            except Exception as exc:  # noqa: BLE001
+                _emit(
+                    "dream.lesson.capture",
+                    "DEGRADED",
+                    pattern_kind=pattern["kind"],
+                    reason=f"{type(exc).__name__}: {exc}",
+                )
+                # Fall through to direct store below as best-effort.
+                if adapter is not None:
+                    try:
+                        adapter.store(lesson)
+                    except Exception:  # noqa: BLE001
+                        pass
+                continue
+
+            result = outbox.flush(adapter)
+            if result.failed:
+                _emit(
+                    "dream.lesson.flush",
+                    "DEGRADED",
+                    pattern_kind=pattern["kind"],
+                    failed=result.failed,
+                    flushed=result.flushed,
+                    reason="flush partial failure; entries remain in pending",
+                )
+        elif adapter is not None:
+            # Fallback: outbox unavailable, write directly (pre-REC-021 path).
             try:
                 adapter.store(lesson)
             except Exception as exc:  # noqa: BLE001
@@ -233,17 +303,18 @@ def extract_lessons(
 
 
 def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Generate one candidate change proposal per lesson and write to adapter.
+    """Generate one candidate change proposal per lesson and write via outbox.
 
-    Returns the list of candidate dicts stored (or attempted).  Candidates
-    are stored with kind="proposal".  Store errors are DEGRADED events; the
-    candidate is still returned so gate_and_apply can evaluate it.
+    REC-021: same capture + flush contract as extract_lessons.  On flush
+    failure emits DEGRADED and continues — gate_and_apply still receives the
+    full candidate list.
     """
     if not lessons:
         log("propose", n=0)
         return []
 
     adapter = _get_adapter()
+    outbox = _get_outbox()
     candidates: List[Dict[str, Any]] = []
 
     for lesson in lessons:
@@ -260,7 +331,36 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         }
         candidates.append(candidate)
 
-        if adapter is not None:
+        if outbox is not None and adapter is not None:
+            # REC-021 path: capture to crash-safe buffer, then flush to backend.
+            try:
+                outbox.capture(candidate)
+            except Exception as exc:  # noqa: BLE001
+                _emit(
+                    "dream.propose.capture",
+                    "DEGRADED",
+                    proposal_id=candidate["id"],
+                    reason=f"{type(exc).__name__}: {exc}",
+                )
+                if adapter is not None:
+                    try:
+                        adapter.store(candidate)
+                    except Exception:  # noqa: BLE001
+                        pass
+                continue
+
+            result = outbox.flush(adapter)
+            if result.failed:
+                _emit(
+                    "dream.propose.flush",
+                    "DEGRADED",
+                    proposal_id=candidate["id"],
+                    failed=result.failed,
+                    flushed=result.flushed,
+                    reason="flush partial failure; entries remain in pending",
+                )
+        elif adapter is not None:
+            # Fallback: outbox unavailable, write directly (pre-REC-021 path).
             try:
                 adapter.store(candidate)
             except Exception as exc:  # noqa: BLE001
