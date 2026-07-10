@@ -9,17 +9,20 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Transactional outbox (REC-019):** `src/eidolon/outbox.py` — crash-safe
-  two-phase capture → flush pipeline for lessons and proposals.
-  `capture()` appends to `$EIDOLON_HOME/outbox/pending.jsonl` with
-  fsync; `flush()` drains to `events.jsonl` exactly once then truncates
-  pending.  Crash between capture and flush replays safely on next
-  flush.  Thread-safe via per-instance lock.  Degrades loudly (DEGRADED
-  event) on any OS error; never raises to caller.
-- **`tests/unit/test_outbox.py`:** 8 tests; all FAILED before this
-  commit (module did not exist), all PASS after.  Covers: append,
-  flush-exactly-once, crash-resume, empty-flush no-op, kind filter,
-  missing-field drop, ts auto-stamp, DEGRADED event on bad path.
+- **Transactional outbox — `src/eidolon/outbox.py` (REC-019):** Crash-safe
+  capture + idempotent flush layer between the dream cycle and any
+  `MemoryAdapter` backend.  `Outbox.capture` appends to
+  `$EIDOLON_HOME/outbox/pending.jsonl` (atomic line-append; each entry
+  carries a 16-hex `_eid` for idempotency).  `Outbox.flush(adapter)` drains
+  the pending file into the adapter exactly once, rewrites the file
+  atomically via `os.replace`, and returns a `FlushResult(flushed, skipped,
+  failed)`.  A crash mid-flush replays cleanly on next cycle; duplicate
+  entries (adapter raises `"duplicate"` / `"exists"`) are skipped, not
+  failed.  Stdlib-only; no new dependencies.
+- **`tests/unit/test_outbox.py` (REC-019):** 10 unit tests covering capture,
+  missing-field validation, pending count, flush-exactly-once, backend
+  failure retention, duplicate-skip, and partial-failure isolation.  All
+  FAILED before this commit, all PASS after.
 
 ### Fixed
 - **P0 — Learning loop write-only bug (PR #31):** `ThompsonBandit` always
@@ -33,7 +36,9 @@ Versioning: [SemVer](https://semver.org/).
   to `OPERATOR_INPUT_REQUIRED_ON_RELEASE_TAG` so `bump-citation` CI job owns
   these fields at tag-push time. Fixes `test_placeholders_present`.
 
-### Added (prior unreleased)
+### Added (prior)
+- **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
+  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
 - **Shadow eval infrastructure (PR #25 / REC-017):** `src/eidolon/skills/`
   package: `ShadowEvaluator`, `ShadowResult`, and the `shadow` / `active` /
   `retired` lifecycle state machine (`lifecycle.py`). A MEDIUM-risk skill
@@ -46,22 +51,15 @@ Versioning: [SemVer](https://semver.org/).
 - **REC-017** `docs/skill-lifecycle.md`: operator reference for shadow eval,
   promotion criteria, manifest schema, and state transitions.
 - 14 new unit tests in `tests/unit/test_shadow_eval.py`.
-- **`ACKNOWLEDGMENTS.md` (PR #27):** Canonical intellectual lineage —
-  PromptQuine (arXiv:2506.17930), Yao Meta-Skill, CavemanLLM, Anthropic
-  soul-document pattern, CL4R1T4S, SophosAI CAMLIS 2025, memory provider
-  ecosystem, design-pattern credits. All links verified 2026-07-09.
+- **`ACKNOWLEDGMENTS.md` (PR #27):** Canonical intellectual lineage.
 - **`PHILOSOPHY.md` (PR #28):** Origins, Quine Principle, Five Principles
   failure-mode provenance, Measurable-Improvement Thesis, §13 non-goals mirror.
 - **`README.md` Philosophy & Lineage paragraph (PR #30):** Links
-  `PHILOSOPHY.md` and `ACKNOWLEDGMENTS.md`; cites PromptQuine, Yao Meta-Skill,
-  soul-document pattern. States non-goals inline (no PPO, no telemetry, no GUI).
-- **`tests/unit/test_replay_hydration.py` (PR #31):** 2 new tests proving
-  posteriors survive session boundaries. Both FAILED before the fix, PASS after.
+  `PHILOSOPHY.md` and `ACKNOWLEDGMENTS.md`.
 
 ### Changed
 - **`docs/compatibility.md` + `README.md` (PR #29):** Windows row set to FAIL
-  across all Python columns; explicit WSL2-only paragraph added. §13 non-goals
-  sweep: leaderboard/telemetry/GUI/PPO/marketplace all absent.
+  across all Python columns; explicit WSL2-only paragraph added.
 
 ---
 
