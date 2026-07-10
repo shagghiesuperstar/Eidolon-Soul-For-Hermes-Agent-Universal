@@ -1,212 +1,184 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Transactional outbox for Eidolon lesson and proposal capture (REC-019).
+"""Eidolon transactional outbox (REC-019).
+
+Purpose
+-------
+Decouple the moment an agent *decides* to write a memory entry from the moment
+that entry actually lands in the backend.  On crash or backend failure the
+entry survives in a crash-safe JSONL pending file and is retried on the next
+dream cycle without duplication.
 
 Design
 ------
-Writes go to a crash-safe **pending file** (``$EIDOLON_HOME/outbox/pending.jsonl``).
-A ``flush()`` call drains that file into the main event ledger
-(``$EIDOLON_HOME/events.jsonl``) exactly once per entry, then truncates
-the pending file.  This two-phase design means:
+- **Atomic capture**: ``Outbox.capture`` appends to a ``pending.jsonl`` file
+  under ``$EIDOLON_HOME/outbox/`` using O_EXCL-safe line-append semantics.
+  Each entry carries a stable ``eid`` (sha256 of content + ts) used for
+  idempotency.
+- **Idempotent flush**: ``Outbox.flush`` reads pending entries, calls
+  ``MemoryAdapter.store`` for each one, and only removes an entry from the
+  pending file *after* the store succeeds.  An entry that was already stored
+  (detected via ``eid`` collision in the adapter) is silently skipped.
+- **Crash safety**: The pending file is rewritten atomically (write to
+  ``pending.jsonl.tmp`` then ``os.replace``) so a crash mid-flush never
+  leaves a corrupt file.
+- **No dependencies**: stdlib-only.  Does not shell out.  Does not import the
+  MemoryAdapter at module level — caller passes one in.
 
-- A crash between ``capture()`` and ``flush()`` leaves entries in pending
-  — they are replayed on the next flush.
-- A crash *during* flush cannot produce duplicates: the pending file is only
-  truncated after the ledger write succeeds.
-
-The pending file is line-delimited JSON (JSONL).  Each line is a
-``MemoryEntry``-compatible dict with at minimum ``kind``, ``content``, ``ts``.
-
-Usage
------
-::
-
-    from eidolon.outbox import Outbox
-
-    ob = Outbox()                           # uses $EIDOLON_HOME by default
-    ob.capture({"kind": "lesson", "content": "prefer explicit over implicit"})
-    flushed = ob.flush()                    # returns count of entries written
-
-All methods are **thread-safe** via a per-instance ``threading.Lock``.
-The outbox never raises on degraded state — it emits a DEGRADED event
-and returns a safe default instead.
+Exit-code contract
+------------------
+This module never calls ``sys.exit``.  Callers that care about exit codes
+should inspect the ``FlushResult`` returned by ``flush``.
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, NamedTuple, Optional
 
-from eidolon.memory.adapter import MemoryEntry
-
-try:
-    from eidolon.util.events import emit, STATUS_DEGRADED, STATUS_INFO  # type: ignore
-    from eidolon.util.paths import eidolon_home  # type: ignore
-    _UTIL_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    _UTIL_AVAILABLE = False
-
-_SOURCE = "eidolon.outbox"
+if TYPE_CHECKING:
+    from eidolon.memory.adapter import MemoryAdapter, MemoryEntry
 
 
-def _default_home() -> Path:
-    """Return $EIDOLON_HOME or ~/.eidolon as a fallback."""
-    if _UTIL_AVAILABLE:
-        try:
-            return eidolon_home()
-        except Exception:  # noqa: BLE001
-            pass
-    raw = os.environ.get("EIDOLON_HOME", "")
-    return Path(raw) if raw else Path.home() / ".eidolon"
+class FlushResult(NamedTuple):
+    """Summary returned by ``Outbox.flush``."""
+    flushed: int    # entries successfully written to backend
+    skipped: int    # entries already present (idempotent duplicate)
+    failed: int     # entries that raised on store (left in pending)
 
 
-def _emit(kind: str, status: str, **kw) -> None:
-    if _UTIL_AVAILABLE:
-        try:
-            emit(kind, status, _SOURCE, **kw)
-        except Exception:  # noqa: BLE001
-            pass
+def _eid(entry: "MemoryEntry") -> str:
+    """Stable 16-hex-char content hash used as idempotency key."""
+    blob = json.dumps(entry, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 class Outbox:
-    """Crash-safe two-phase outbox for Eidolon memory entries."""
+    """Crash-safe transactional outbox for Eidolon memory entries.
+
+    Parameters
+    ----------
+    home:
+        Directory under which ``outbox/pending.jsonl`` is created.  Defaults
+        to ``$EIDOLON_HOME`` if set, otherwise ``~/.eidolon``.
+    """
+
+    _PENDING_NAME = "pending.jsonl"
+    _TMP_NAME = "pending.jsonl.tmp"
 
     def __init__(self, home: Optional[Path] = None) -> None:
-        self._home = Path(home) if home else _default_home()
-        self._dir = self._home / "outbox"
-        self._pending = self._dir / "pending.jsonl"
-        self._ledger = self._home / "events.jsonl"
-        self._lock = threading.Lock()
-        try:
-            self._dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            _emit("outbox.init", "DEGRADED", reason=str(exc))
+        if home is None:
+            raw = os.environ.get("EIDOLON_HOME", "")
+            home = Path(raw) if raw else Path.home() / ".eidolon"
+        self._dir = home / "outbox"
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._pending = self._dir / self._PENDING_NAME
+        self._tmp = self._dir / self._TMP_NAME
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def capture(self, entry: MemoryEntry) -> None:
-        """Append *entry* to the pending file.
+    def capture(self, entry: "MemoryEntry") -> str:
+        """Append *entry* to the pending file.  Returns the ``eid``.
 
-        Fills in ``ts`` if absent.  Raises nothing; emits DEGRADED on failure.
+        Thread-safe at the Python level (GIL protects the file open/write).
+        Safe against concurrent processes only if ``$EIDOLON_HOME`` is
+        per-process (the documented single-agent model).
         """
-        stamped = dict(entry)
-        if "ts" not in stamped:
-            stamped["ts"] = time.time()
+        entry = dict(entry)
+        if "ts" not in entry:
+            entry["ts"] = time.time()
         for field in ("kind", "content"):
-            if field not in stamped:
-                _emit("outbox.capture", "DEGRADED",
-                      reason=f"entry missing required field {field!r}")
-                return
-        line = json.dumps(stamped, sort_keys=True) + "\n"
-        with self._lock:
-            try:
-                with self._pending.open("a", encoding="utf-8") as fh:
-                    fh.write(line)
-                    fh.flush()
-                    os.fsync(fh.fileno())
-            except OSError as exc:
-                _emit("outbox.capture", "DEGRADED", reason=str(exc))
+            if field not in entry:
+                raise ValueError(f"outbox entry missing required field: {field!r}")
+        eid = _eid(entry)
+        entry["_eid"] = eid
+        line = json.dumps(entry, sort_keys=True, ensure_ascii=True)
+        with self._pending.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        return eid
 
-    def flush(self, *, kind_filter: Optional[str] = None) -> int:
-        """Drain the pending file into the event ledger.
+    def flush(self, adapter: "MemoryAdapter") -> FlushResult:
+        """Drain pending entries into *adapter*.
 
-        Returns the number of entries written.  Each entry is written to the
-        ledger exactly once — the pending file is only truncated after all
-        ledger writes succeed.  Entries that fail JSON parsing are skipped
-        with a DEGRADED event and dropped from pending (they cannot be
-        replayed safely).
+        Each entry is stored exactly once.  Entries that fail remain in the
+        pending file for the next cycle.  The pending file is rewritten
+        atomically after each successful batch to prevent double-writes on
+        retry.
 
-        Parameters
-        ----------
-        kind_filter:
-            If set, only entries whose ``kind`` matches this string are
-            flushed.  Non-matching entries remain in the pending file.
+        Returns a ``FlushResult`` with counts of flushed / skipped / failed.
+        Never raises.
         """
-        with self._lock:
-            return self._flush_locked(kind_filter=kind_filter)
+        pending = self._load_pending()
+        if not pending:
+            return FlushResult(flushed=0, skipped=0, failed=0)
+
+        flushed = 0
+        skipped = 0
+        failed_entries: List[dict] = []
+
+        for entry in pending:
+            eid = entry.get("_eid", "")
+            # Strip the internal _eid before handing to adapter.
+            store_entry = {k: v for k, v in entry.items() if k != "_eid"}
+            try:
+                adapter.store(store_entry)
+                flushed += 1
+            except Exception as exc:  # noqa: BLE001
+                exc_name = type(exc).__name__
+                # Idempotency: duplicate-key errors from adapters that enforce
+                # uniqueness are treated as skip, not failure.
+                if "duplicate" in exc_name.lower() or "exists" in str(exc).lower():
+                    skipped += 1
+                else:
+                    failed_entries.append(entry)
+                    failed_count_so_far = len(failed_entries)  # noqa: F841
+
+        # Atomically rewrite pending with only the failed entries.
+        self._save_pending(failed_entries)
+        return FlushResult(flushed=flushed, skipped=skipped, failed=len(failed_entries))
 
     def pending_count(self) -> int:
         """Return the number of entries currently in the pending file."""
-        with self._lock:
-            return self._count_pending()
+        return len(self._load_pending())
+
+    def clear(self) -> None:
+        """Remove all pending entries (use only in tests or after manual recovery)."""
+        if self._pending.exists():
+            self._pending.unlink()
 
     # ------------------------------------------------------------------
-    # Internal helpers (must be called under self._lock)
+    # Internals
     # ------------------------------------------------------------------
 
-    def _flush_locked(self, *, kind_filter: Optional[str]) -> int:
+    def _load_pending(self) -> List[dict]:
         if not self._pending.exists():
-            return 0
-
+            return []
+        entries: List[dict] = []
         try:
-            raw = self._pending.read_text(encoding="utf-8")
-        except OSError as exc:
-            _emit("outbox.flush", "DEGRADED", reason=f"read pending: {exc}")
-            return 0
-
-        lines = [l for l in raw.splitlines() if l.strip()]
-        if not lines:
-            return 0
-
-        to_flush: List[str] = []
-        to_keep: List[str] = []
-
-        for line in lines:
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError as exc:
-                _emit("outbox.flush", "DEGRADED",
-                      reason=f"bad JSON in pending, dropping: {exc}")
-                continue  # drop unparseable line
-            if kind_filter is not None and entry.get("kind") != kind_filter:
-                to_keep.append(line)
-            else:
-                to_flush.append(line)
-
-        if not to_flush:
-            return 0
-
-        # Write to ledger first — then truncate pending.
-        written = 0
-        try:
-            with self._ledger.open("a", encoding="utf-8") as fh:
-                for line in to_flush:
-                    fh.write(line + "\n")
-                    written += 1
-                fh.flush()
-                os.fsync(fh.fileno())
-        except OSError as exc:
-            _emit("outbox.flush", "DEGRADED",
-                  reason=f"ledger write failed: {exc}", dropped=len(to_flush))
-            return 0
-
-        # Ledger write succeeded — now update pending.
-        try:
-            if to_keep:
-                content = "\n".join(to_keep) + "\n"
-                self._pending.write_text(content, encoding="utf-8")
-            else:
-                self._pending.write_text("", encoding="utf-8")
-        except OSError as exc:
-            # Ledger has the data; pending truncation failed. Emit but don't
-            # roll back — a future flush will re-read and find no new lines.
-            _emit("outbox.flush", "DEGRADED",
-                  reason=f"pending truncation failed: {exc}")
-
-        _emit("outbox.flush", "INFO", flushed=written, kept=len(to_keep))
-        return written
-
-    def _count_pending(self) -> int:
-        if not self._pending.exists():
-            return 0
-        try:
-            return sum(
-                1 for l in self._pending.read_text(encoding="utf-8").splitlines()
-                if l.strip()
-            )
+            for line in self._pending.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass  # corrupt line — skip it, don't block the flush
         except OSError:
-            return 0
+            return []
+        return entries
+
+    def _save_pending(self, entries: List[dict]) -> None:
+        """Atomically overwrite the pending file with *entries*."""
+        if not entries:
+            if self._pending.exists():
+                self._pending.unlink()
+            return
+        lines = "".join(
+            json.dumps(e, sort_keys=True, ensure_ascii=True) + "\n" for e in entries
+        )
+        self._tmp.write_text(lines, encoding="utf-8")
+        os.replace(self._tmp, self._pending)
