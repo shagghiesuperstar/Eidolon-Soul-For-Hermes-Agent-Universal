@@ -12,6 +12,7 @@ Eidolon is a drop-in layer that hardens a Hermes agent's native dream, reflectio
 - **Clear SOUL.md contract** — a plain, zero-guess identity and operating contract the agent loads every session. No manual sealing or hashing to maintain.
 - **Risk-gated self-improvement** — low-risk fixes auto-apply; high-risk changes are shadow-tested first; regressions auto-roll-back.
 - **Dream cycle** — autonomous post-session and scheduled reflection that mines hindsight memory, extracts lessons, and proposes improvements.
+- **Transactional outbox** — lessons and proposals are captured crash-safely to `$EIDOLON_HOME/outbox/pending.jsonl` and flushed to the event ledger exactly once. A crash between capture and flush replays cleanly on next run.
 - **Integrity watchdog** — detects when upstream Hermes changes (skills paths, hooks, cron) break your setup and alerts the operator **once** per incident, without blocking sessions.
 
 ## Principles
@@ -37,6 +38,7 @@ SOUL.md                     Identity + operating contract (plain, no seal)
 OPERATOR.md                 Human-facing setup + control guide
 skills/dream-cycle/         Autonomous reflection + RL loop
 skills/integrity-watchdog/  Drift detection + one-time alerting
+src/eidolon/outbox.py       Crash-safe transactional outbox (REC-019)
 tests/                      Adversarial harness + test plan
 ```
 
