@@ -9,6 +9,19 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Outbox wiring in dream write path — REC-021:** `extract_lessons()` and
+  `propose()` now buffer entries through `Outbox.capture()` before calling
+  `Outbox.flush(adapter)` once per function.  A crash mid-write no longer
+  loses entries; un-flushed entries in `$EIDOLON_HOME/outbox/pending.jsonl`
+  replay automatically on the next dream cycle.  When the eidolon package is
+  not importable the functions degrade to direct `adapter.store()` calls
+  (same degrade path as REC-020).
+- **`tests/unit/test_dream_outbox_wiring.py` (REC-021):** 4 unit tests
+  verifying: lessons land in adapter via outbox, lessons returned even on
+  flush failure, proposals land in adapter via outbox, and flush failure
+  leaves entries in `pending.jsonl` for replay.  All FAILED before this
+  change, all PASS after.
+
 - **Dream-cycle MemoryAdapter wiring — REC-020:** All four TODO stubs in
   `skills/dream-cycle/handler.py` are now wired to the `MemoryAdapter`:
   - `ingest()` calls `adapter.retrieve(kind=..., limit=200, since_ts=<7d>)` for

@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for REC-020: MemoryAdapter wiring in the dream-cycle handler."""
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]  # tests/unit -> repo root
 sys.path.insert(0, str(ROOT / "src"))
+
+from eidolon.outbox import Outbox  # noqa: E402
 
 # Import the handler functions we're testing.
 import importlib
@@ -55,8 +59,9 @@ class _FailingAdapter:
 
 
 def _reset_adapter():
-    """Clear the module-level adapter singleton between tests."""
+    """Clear the module-level adapter and outbox singletons between tests."""
     _handler._ADAPTER = None
+    _handler._Outbox = None
 
 
 class TestIngest(unittest.TestCase):
@@ -114,7 +119,22 @@ class TestReflect(unittest.TestCase):
 
 class TestExtractLessons(unittest.TestCase):
     def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_home = os.environ.get("EIDOLON_HOME")
+        os.environ["EIDOLON_HOME"] = self._tmp.name
+        _handler._Outbox = Outbox
         _reset_adapter()
+        # Re-inject Outbox after _reset_adapter cleared it
+        _handler._Outbox = Outbox
+
+    def tearDown(self):
+        if self._orig_home is None:
+            os.environ.pop("EIDOLON_HOME", None)
+        else:
+            os.environ["EIDOLON_HOME"] = self._orig_home
+        self._tmp.cleanup()
+        _handler._Outbox = None
+        _handler._ADAPTER = None
 
     def test_extract_lessons_writes_to_adapter(self):
         adapter = _CapturingAdapter()
@@ -138,7 +158,22 @@ class TestExtractLessons(unittest.TestCase):
 
 class TestPropose(unittest.TestCase):
     def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_home = os.environ.get("EIDOLON_HOME")
+        os.environ["EIDOLON_HOME"] = self._tmp.name
+        _handler._Outbox = Outbox
         _reset_adapter()
+        # Re-inject Outbox after _reset_adapter cleared it
+        _handler._Outbox = Outbox
+
+    def tearDown(self):
+        if self._orig_home is None:
+            os.environ.pop("EIDOLON_HOME", None)
+        else:
+            os.environ["EIDOLON_HOME"] = self._orig_home
+        self._tmp.cleanup()
+        _handler._Outbox = None
+        _handler._ADAPTER = None
 
     def test_propose_writes_to_adapter(self):
         adapter = _CapturingAdapter()
