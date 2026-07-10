@@ -18,6 +18,11 @@ REC-020 wiring:
 - extract_lessons() writes each new lesson back to the adapter (kind="lesson").
 - propose()       writes each candidate proposal to the adapter (kind="proposal").
 
+REC-021 wiring:
+- extract_lessons() and propose() now buffer writes through Outbox.capture()
+  before flushing to the adapter in a single Outbox.flush() call.  A crash
+  mid-write no longer loses entries; pending entries replay on the next cycle.
+
 The adapter is loaded once per run via `eidolon.memory.loader.load_adapter()`
 (reads $HERMES_HOME/config.yaml; falls back to hindsight; degrades to inmem).
 When the eidolon package is not importable the handler falls back to the
@@ -48,10 +53,12 @@ try:
     from eidolon.util import events as _events  # type: ignore
     from eidolon.safety import take_snapshot, list_snapshots  # type: ignore
     from eidolon.memory.loader import load_adapter as _load_adapter  # type: ignore
+    from eidolon.outbox import Outbox as _Outbox  # type: ignore
     _EIDOLON_AVAILABLE = True
 except Exception:  # noqa: BLE001 - stay backward-compatible with older installs
     _EIDOLON_AVAILABLE = False
     _load_adapter = None  # type: ignore
+    _Outbox = None  # type: ignore
 
 # Module-level adapter singleton: loaded once per process, lazily on first use.
 _ADAPTER = None
@@ -114,7 +121,7 @@ def save_state(state):
 
 
 # ---------------------------------------------------------------------------
-# Dream phases — REC-020: all four stubs are now wired to the MemoryAdapter
+# Dream phases
 # ---------------------------------------------------------------------------
 
 _INGEST_KINDS = ("lesson", "preference", "reflection", "episode")
@@ -176,8 +183,6 @@ def reflect(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     patterns = []
     for kind, entries in buckets.items():
-        # Newest-first sort (adapter already returns newest-first, but entries
-        # from multiple kinds are interleaved so we sort again here).
         entries.sort(key=lambda e: e.get("ts", 0), reverse=True)
         patterns.append({
             "kind": kind,
@@ -192,11 +197,13 @@ def reflect(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def extract_lessons(
     patterns: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Synthesise one lesson per pattern cluster and write it to the adapter.
+    """Synthesise one lesson per pattern cluster and durably buffer via Outbox.
 
-    Returns the list of lesson entries stored (or attempted).  Lessons are
-    stored with kind="lesson".  Store errors are emitted as DEGRADED events;
-    the lesson is still returned to the caller so the dream cycle continues.
+    REC-021: entries are captured into the outbox (crash-safe JSONL) before
+    the flush to the adapter.  A crash between entries no longer loses work;
+    the next cycle replays any un-flushed entries.  When the eidolon package
+    is not importable the function falls back to returning lessons without
+    any IO (same degrade path as before REC-021).
     """
     if not patterns:
         log("lesson", n=0)
@@ -205,39 +212,84 @@ def extract_lessons(
     adapter = _get_adapter()
     lessons: List[Dict[str, Any]] = []
 
-    for pattern in patterns:
-        lesson = {
-            "kind": "lesson",
-            "content": (
-                f"Pattern '{pattern['kind']}' observed {pattern['count']} time(s). "
-                f"Most recent: {pattern['sample'][:200]}"
-            ),
-            "source_kind": pattern["kind"],
-            "source_count": pattern["count"],
-        }
-        lessons.append(lesson)
-
-        if adapter is not None:
+    if adapter is not None and _Outbox is not None:
+        ob = _Outbox()
+        for pattern in patterns:
+            lesson = {
+                "kind": "lesson",
+                "content": (
+                    f"Pattern '{pattern['kind']}' observed {pattern['count']} time(s). "
+                    f"Most recent: {pattern['sample'][:200]}"
+                ),
+                "source_kind": pattern["kind"],
+                "source_count": pattern["count"],
+            }
+            lessons.append(lesson)
             try:
-                adapter.store(lesson)
+                ob.capture(lesson)
             except Exception as exc:  # noqa: BLE001
                 _emit(
-                    "dream.lesson.store",
+                    "dream.lesson.capture",
                     "DEGRADED",
                     pattern_kind=pattern["kind"],
                     reason=f"{type(exc).__name__}: {exc}",
                 )
+        try:
+            result = ob.flush(adapter)
+            _emit(
+                "dream.lesson.flush",
+                "INFO",
+                flushed=result.flushed,
+                skipped=result.skipped,
+                failed=result.failed,
+            )
+            if result.failed:
+                _emit(
+                    "dream.lesson.flush",
+                    "DEGRADED",
+                    failed=result.failed,
+                    reason="entries left in outbox pending for next cycle",
+                )
+        except Exception as exc:  # noqa: BLE001
+            _emit(
+                "dream.lesson.flush",
+                "DEGRADED",
+                reason=f"{type(exc).__name__}: {exc}",
+            )
+    else:
+        # Degrade path: no outbox available (pre-REC-021 install or eidolon
+        # package not importable).  Attempt direct adapter.store if possible.
+        for pattern in patterns:
+            lesson = {
+                "kind": "lesson",
+                "content": (
+                    f"Pattern '{pattern['kind']}' observed {pattern['count']} time(s). "
+                    f"Most recent: {pattern['sample'][:200]}"
+                ),
+                "source_kind": pattern["kind"],
+                "source_count": pattern["count"],
+            }
+            lessons.append(lesson)
+            if adapter is not None:
+                try:
+                    adapter.store(lesson)
+                except Exception as exc:  # noqa: BLE001
+                    _emit(
+                        "dream.lesson.store",
+                        "DEGRADED",
+                        pattern_kind=pattern["kind"],
+                        reason=f"{type(exc).__name__}: {exc}",
+                    )
 
     _emit("dream.lesson", "INFO", n=len(lessons))
     return lessons
 
 
 def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Generate one candidate change proposal per lesson and write to adapter.
+    """Generate one candidate per lesson and durably buffer via Outbox.
 
-    Returns the list of candidate dicts stored (or attempted).  Candidates
-    are stored with kind="proposal".  Store errors are DEGRADED events; the
-    candidate is still returned so gate_and_apply can evaluate it.
+    REC-021: same outbox pattern as extract_lessons.  Candidates are captured
+    before flush; a crash replays cleanly on next cycle.
     """
     if not lessons:
         log("propose", n=0)
@@ -246,37 +298,84 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     adapter = _get_adapter()
     candidates: List[Dict[str, Any]] = []
 
-    for lesson in lessons:
-        candidate = {
-            "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
-            "kind": "proposal",
-            "content": (
-                f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
-                f"events based on {lesson.get('source_count', 0)} observations."
-            ),
-            "lesson_content": lesson.get("content", ""),
-            "risk": "low",
-            "mutation_kind": "preference_update",
-        }
-        candidates.append(candidate)
-
-        if adapter is not None:
+    if adapter is not None and _Outbox is not None:
+        ob = _Outbox()
+        for lesson in lessons:
+            candidate = {
+                "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
+                "kind": "proposal",
+                "content": (
+                    f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
+                    f"events based on {lesson.get('source_count', 0)} observations."
+                ),
+                "lesson_content": lesson.get("content", ""),
+                "risk": "low",
+                "mutation_kind": "preference_update",
+            }
+            candidates.append(candidate)
             try:
-                adapter.store(candidate)
+                ob.capture(candidate)
             except Exception as exc:  # noqa: BLE001
                 _emit(
-                    "dream.propose.store",
+                    "dream.propose.capture",
                     "DEGRADED",
                     proposal_id=candidate["id"],
                     reason=f"{type(exc).__name__}: {exc}",
                 )
+        try:
+            result = ob.flush(adapter)
+            _emit(
+                "dream.propose.flush",
+                "INFO",
+                flushed=result.flushed,
+                skipped=result.skipped,
+                failed=result.failed,
+            )
+            if result.failed:
+                _emit(
+                    "dream.propose.flush",
+                    "DEGRADED",
+                    failed=result.failed,
+                    reason="entries left in outbox pending for next cycle",
+                )
+        except Exception as exc:  # noqa: BLE001
+            _emit(
+                "dream.propose.flush",
+                "DEGRADED",
+                reason=f"{type(exc).__name__}: {exc}",
+            )
+    else:
+        # Degrade path: no outbox available.
+        for lesson in lessons:
+            candidate = {
+                "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
+                "kind": "proposal",
+                "content": (
+                    f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
+                    f"events based on {lesson.get('source_count', 0)} observations."
+                ),
+                "lesson_content": lesson.get("content", ""),
+                "risk": "low",
+                "mutation_kind": "preference_update",
+            }
+            candidates.append(candidate)
+            if adapter is not None:
+                try:
+                    adapter.store(candidate)
+                except Exception as exc:  # noqa: BLE001
+                    _emit(
+                        "dream.propose.store",
+                        "DEGRADED",
+                        proposal_id=candidate["id"],
+                        reason=f"{type(exc).__name__}: {exc}",
+                    )
 
     _emit("dream.propose", "INFO", n=len(candidates))
     return candidates
 
 
 # ---------------------------------------------------------------------------
-# Remaining phases — unchanged from prior implementation
+# Remaining phases — unchanged
 # ---------------------------------------------------------------------------
 
 def risk_of(candidate):
