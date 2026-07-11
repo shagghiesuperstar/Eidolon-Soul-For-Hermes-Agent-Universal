@@ -4,8 +4,22 @@
 Without this module, Eidolon only writes private ledgers Hermes never reads.
 That is zero value to the human. This bridge is the product.
 
-Hermes loads ``$HERMES_HOME/memories/MEMORY.md`` into every session (within
-``memory.memory_char_limit``). We maintain a bounded section there:
+v2.0 — Judgment Brain wired:
+    After every successful MEMORY.md write, the lesson is classified by
+    the Judgment Brain (src/eidolon/judgment/) and the resulting action is
+    executed immediately:
+
+        SOUL_EDICT    → appended to SOUL.md EIDOLON EDICTS section
+        SKILL_UPDATE  → appended to skills/eidolon-learned.md
+        CONFIG_TUNE   → appended to memories/eidolon-prefs.md
+        MEMORY_RETIRE → lesson line removed from MEMORY.md (baked in elsewhere)
+        MEMORY_RETAIN → lesson stays in MEMORY.md (not yet actionable)
+
+    Result dict now carries judgment outcome: kind, judgment_status,
+    and aggregate metrics from load_metrics().
+
+Hermes loads $HERMES_HOME/memories/MEMORY.md into every session (within
+memory.memory_char_limit). We maintain a bounded section there:
 
     §
     EIDOLON LEARNED:
@@ -13,7 +27,7 @@ Hermes loads ``$HERMES_HOME/memories/MEMORY.md`` into every session (within
     §
 
 Rules:
-- Never touch SOUL.md or config.yaml.
+- SOUL.md invariants above EIDOLON EDICTS marker are NEVER touched.
 - Bounded: max_lines lessons, max section ~900 chars, oldest dropped.
 - Idempotent: identical lesson text is not duplicated.
 - Loud: returns a result dict; never silent on failure.
@@ -37,7 +51,6 @@ MAX_LESSON_CHARS = 180
 
 def hermes_memory_path(hermes_home: Optional[Path] = None) -> Path:
     home = hermes_home or Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
-    # Prefer memories/MEMORY.md (Hermes profile memory store)
     candidates = [
         home / "memories" / "MEMORY.md",
         home / "MEMORY.md",
@@ -45,7 +58,6 @@ def hermes_memory_path(hermes_home: Optional[Path] = None) -> Path:
     for c in candidates:
         if c.exists():
             return c
-    # Default create under memories/
     target = candidates[0]
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
@@ -57,7 +69,6 @@ def _normalize_lesson(text: str) -> str:
     t = " ".join((text or "").split())
     t = t.strip()
     if t.lower().startswith("improve handling of"):
-        # Strip worthless template proposals — do not pollute Hermes memory
         return ""
     if len(t) > MAX_LESSON_CHARS:
         t = t[: MAX_LESSON_CHARS - 1].rstrip() + "…"
@@ -65,7 +76,6 @@ def _normalize_lesson(text: str) -> str:
 
 
 def _parse_section(body: str) -> List[str]:
-    """Return list of lesson lines (without leading '- ')."""
     lines = []
     for raw in body.splitlines():
         s = raw.strip()
@@ -79,7 +89,6 @@ def _parse_section(body: str) -> List[str]:
 def _render_section(lessons: List[str]) -> str:
     body = "\n".join(f"- {x}" for x in lessons if x)
     block = f"§\n{SECTION_HEADER}\n{body}\n§"
-    # trim from oldest if too large
     while len(block) > MAX_SECTION_CHARS and len(lessons) > 1:
         lessons = lessons[1:]
         body = "\n".join(f"- {x}" for x in lessons)
@@ -92,23 +101,32 @@ def promote_lesson_to_hermes(
     *,
     hermes_home: Optional[Path] = None,
     source_id: str = "",
+    eidolon_home: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Append a lesson into Hermes MEMORY.md. Returns status dict."""
+    """Promote a lesson into Hermes MEMORY.md, then run Judgment Brain.
+
+    Returns a result dict with:
+        status          — 'ok' | 'skipped' | 'fail'
+        judgment_kind   — ActionKind value (present when status='ok')
+        judgment_status — 'ok' | 'skip' | 'fail' (present when status='ok')
+        metrics         — aggregate judgment counters (always present)
+    """
     text = _normalize_lesson(lesson_text)
     if not text:
         return {
             "status": "skipped",
             "reason": "empty_or_template_proposal",
             "source_id": source_id,
+            "metrics": _safe_load_metrics(eidolon_home),
         }
 
     path = hermes_memory_path(hermes_home)
     try:
         original = path.read_text(encoding="utf-8") if path.exists() else ""
     except OSError as exc:
-        return {"status": "fail", "reason": f"read:{exc}", "source_id": source_id}
+        return {"status": "fail", "reason": f"read:{exc}", "source_id": source_id,
+                "metrics": _safe_load_metrics(eidolon_home)}
 
-    # Extract existing EIDOLON LEARNED section if present
     pattern = re.compile(
         r"§\s*\nEIDOLON LEARNED:\n(.*?)(?:\n§|$)",
         re.DOTALL | re.IGNORECASE,
@@ -121,7 +139,6 @@ def promote_lesson_to_hermes(
         lessons = []
         rest = original
 
-    # Dedup
     if any(text == L or text in L or L in text for L in lessons):
         return {
             "status": "skipped",
@@ -129,6 +146,7 @@ def promote_lesson_to_hermes(
             "path": str(path),
             "source_id": source_id,
             "lessons": len(lessons),
+            "metrics": _safe_load_metrics(eidolon_home),
         }
 
     lessons.append(text)
@@ -136,12 +154,15 @@ def promote_lesson_to_hermes(
         lessons = lessons[-MAX_LESSONS:]
 
     section = _render_section(lessons)
-    # Place section at end of MEMORY.md
     new_body = rest.rstrip() + "\n" + section + "\n"
     try:
         path.write_text(new_body, encoding="utf-8")
     except OSError as exc:
-        return {"status": "fail", "reason": f"write:{exc}", "source_id": source_id}
+        return {"status": "fail", "reason": f"write:{exc}", "source_id": source_id,
+                "metrics": _safe_load_metrics(eidolon_home)}
+
+    # --- Judgment Brain ---
+    j_kind, j_status = _run_judgment(text, hermes_home=hermes_home, eidolon_home=eidolon_home)
 
     return {
         "status": "ok",
@@ -150,7 +171,35 @@ def promote_lesson_to_hermes(
         "lessons": len(lessons),
         "wrote": text,
         "ts": time.time(),
+        "judgment_kind": j_kind,
+        "judgment_status": j_status,
+        "metrics": _safe_load_metrics(eidolon_home),
     }
+
+
+def _run_judgment(
+    lesson: str,
+    *,
+    hermes_home: Optional[Path],
+    eidolon_home: Optional[Path],
+) -> tuple:
+    """Classify lesson, execute action, record metric. Returns (kind_str, status_str)."""
+    try:
+        from eidolon.judgment import classify_lesson, execute_judgment, record_judgment
+        kind, _reason = classify_lesson(lesson)
+        result = execute_judgment(kind, lesson, hermes_home=hermes_home)
+        record_judgment(kind.value, result["status"], lesson, eidolon_home=eidolon_home)
+        return kind.value, result["status"]
+    except Exception as exc:  # pylint: disable=broad-except
+        return "judgment_error", f"fail:{exc}"
+
+
+def _safe_load_metrics(eidolon_home: Optional[Path]) -> Dict[str, Any]:
+    try:
+        from eidolon.judgment import load_metrics
+        return load_metrics(eidolon_home)
+    except Exception:  # pylint: disable=broad-except
+        return {}
 
 
 __all__ = ["promote_lesson_to_hermes", "hermes_memory_path", "SECTION_HEADER"]
