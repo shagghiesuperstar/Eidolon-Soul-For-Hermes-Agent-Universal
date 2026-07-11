@@ -48,6 +48,7 @@ _SOUL_SIGNALS = [
 ]
 
 _SKILL_SIGNALS = [
+    r"\bprobe\b",
     r"\bskill\b",
     r"\btool\b.{0,40}\buse\b",
     r"\bwhen.{0,60}\bcommand\b",
