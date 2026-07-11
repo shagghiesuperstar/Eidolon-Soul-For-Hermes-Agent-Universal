@@ -304,10 +304,8 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             candidate = {
                 "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
                 "kind": "proposal",
-                "content": (
-                    f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
-                    f"events based on {lesson.get('source_count', 0)} observations."
-                ),
+                # Primary content = the teaching (what Hermes should remember)
+                "content": (lesson.get("content") or "")[:400],
                 "lesson_content": lesson.get("content", ""),
                 "risk": "low",
                 "mutation_kind": "preference_update",
@@ -350,10 +348,8 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             candidate = {
                 "id": f"proposal:{lesson.get('source_kind', 'unknown')}:{int(time.time())}",
                 "kind": "proposal",
-                "content": (
-                    f"Improve handling of '{lesson.get('source_kind', 'unknown')}' "
-                    f"events based on {lesson.get('source_count', 0)} observations."
-                ),
+                # Primary content = the teaching (what Hermes should remember)
+                "content": (lesson.get("content") or "")[:400],
                 "lesson_content": lesson.get("content", ""),
                 "risk": "low",
                 "mutation_kind": "preference_update",
@@ -399,18 +395,52 @@ def risk_of(candidate):
 
 
 def apply_low(candidate):
-    """Persist a LOW-risk apply to a measurable ledger under $EIDOLON_HOME.
+    """Apply LOW-risk lesson into Hermes Agent memory (what sessions load).
 
-    Writes one JSONL line to applied_proposals.jsonl and appends a short
-    line to applied_lessons.md so `eidolon report` / operators can prove
-    applies happened. Never touches SOUL.md or config.yaml.
+    1) Promote real lesson text into $HERMES_HOME/memories/MEMORY.md
+       (injected every Hermes turn). Worthless template proposals are skipped.
+    2) Still append private ledger for audit/metrics.
+    Never touches SOUL.md or config.yaml.
     """
+    # Prefer lesson_content (actual teaching) over generic proposal blurb
+    lesson_text = (
+        candidate.get("lesson_content")
+        or candidate.get("content")
+        or ""
+    )
+    bridge_status = "bridge_unavailable"
+    bridge_detail = {}
+    if _EIDOLON_AVAILABLE:
+        try:
+            from eidolon.hermes_bridge import promote_lesson_to_hermes
+
+            bridge_detail = promote_lesson_to_hermes(
+                lesson_text,
+                source_id=str(candidate.get("id") or ""),
+            )
+            bridge_status = bridge_detail.get("status", "unknown")
+            _emit(
+                "dream.apply.hermes_memory",
+                "PASS" if bridge_status == "ok" else "DEGRADED",
+                **{k: bridge_detail.get(k) for k in ("reason", "path", "wrote", "lessons") if k in bridge_detail},
+                source_id=candidate.get("id"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            bridge_status = "error"
+            _emit(
+                "dream.apply.hermes_memory",
+                "DEGRADED",
+                reason=f"{type(exc).__name__}: {exc}",
+                source_id=candidate.get("id"),
+            )
+
     rec = {
         "ts": time.time(),
         "id": candidate.get("id"),
         "mutation_kind": candidate.get("mutation_kind"),
-        "content": (candidate.get("content") or "")[:500],
+        "content": (lesson_text or "")[:500],
         "risk": "LOW",
+        "hermes_bridge": bridge_status,
     }
     home = Path(os.environ.get("EIDOLON_HOME", str(Path.home() / ".hermes" / "state" / "eidolon")))
     home.mkdir(parents=True, exist_ok=True)
@@ -422,12 +452,19 @@ def apply_low(candidate):
             os.fsync(fh.fileno())
         md = home / "applied_lessons.md"
         with md.open("a", encoding="utf-8") as fh:
-            fh.write(f"- [{rec['ts']:.0f}] {rec['id']}: {rec['content'][:200]}\n")
+            fh.write(f"- [{rec['ts']:.0f}] {rec['id']}: hermes={bridge_status} {rec['content'][:160]}\n")
     except OSError as exc:
         _emit("dream.apply.write", "DEGRADED", reason=f"{type(exc).__name__}: {exc}")
         log("apply", id=candidate.get("id"), risk="low", write="failed")
         return
-    log("apply", id=candidate.get("id"), risk="low", write="ok", ledger=str(ledger))
+    log(
+        "apply",
+        id=candidate.get("id"),
+        risk="low",
+        write="ok",
+        hermes_bridge=bridge_status,
+        ledger=str(ledger),
+    )
 
 
 def shadow_test(candidate):
