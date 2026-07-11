@@ -30,7 +30,7 @@ No migration step. No install config. Works on first dream cycle.
 | ActionKind | Hermes file written | Human meaning |
 |---|---|---|
 | `SOUL_EDICT` | `$HERMES_HOME/SOUL.md` (EIDOLON EDICTS section) | Universal behavioural rule; Hermes always sees it |
-| `SKILL_UPDATE` | `$HERMES_HOME/skills/eidolon-learned.md` | Repeatable workflow pattern; Hermes loads at session start |
+| `SKILL_UPDATE` | `$HERMES_HOME/skills/_eidolon_staging/eidolon-learned.md` | Repeatable workflow pattern staged for promotion (never live skills/) |
 | `CONFIG_TUNE` | `$HERMES_HOME/memories/eidolon-prefs.md` | Formatting/style preference; Hermes injects from memories/ |
 | `MEMORY_RETIRE` | Removes line from `MEMORY.md` | Lesson is baked in elsewhere; MEMORY.md line is now noise |
 | `MEMORY_RETAIN` | No-op | Lesson not yet actionable; stays in MEMORY.md |

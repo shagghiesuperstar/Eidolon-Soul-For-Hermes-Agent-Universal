@@ -34,6 +34,8 @@ _ZERO: Dict[str, int] = {
     "memory_retained": 0,
     "skipped": 0,
     "failed": 0,
+    # Law of Done counter: only apply_low increments after real SKILL_UPDATE + mark_done.
+    "proposals_applied": 0,
 }
 
 # Maps ActionKind string -> (counter_key, event_kind)
@@ -125,6 +127,41 @@ def record(
             )
 
         _save(data, eidolon_home)
+    except Exception as exc:  # noqa: BLE001
+        events.emit(
+            "judgment.metrics.error",
+            events.STATUS_DEGRADED,
+            source="judgment.metrics",
+            error=str(exc),
+        )
+
+
+def increment(key: str, eidolon_home: Optional[Path] = None) -> None:
+    """Increment a named lifetime counter by 1.
+
+    Intended for Law-of-Done counters such as ``proposals_applied`` that are
+    not tied to a single ActionKind ``record()`` call. Unknown keys are
+    ignored (emit DEGRADED). Failures never propagate to callers.
+    """
+    try:
+        if key not in _ZERO:
+            events.emit(
+                "judgment.metrics.error",
+                events.STATUS_DEGRADED,
+                source="judgment.metrics",
+                error=f"unknown counter key: {key!r}",
+            )
+            return
+        data = load(eidolon_home)
+        data[key] = data.get(key, 0) + 1
+        _save(data, eidolon_home)
+        events.emit(
+            "judgment.increment",
+            events.STATUS_INFO,
+            source="judgment.metrics",
+            counter=key,
+            value=data[key],
+        )
     except Exception as exc:  # noqa: BLE001
         events.emit(
             "judgment.metrics.error",

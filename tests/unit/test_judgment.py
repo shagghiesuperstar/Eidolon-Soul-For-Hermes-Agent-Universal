@@ -71,7 +71,7 @@ class TestExecutor(unittest.TestCase):
             hermes_home=hh,
         )
         self.assertEqual(result["status"], "ok")
-        skill_file = hh / "skills" / "eidolon-learned.md"
+        skill_file = hh / "skills" / "_eidolon_staging" / "eidolon-learned.md"
         self.assertTrue(skill_file.exists())
         self.assertIn("Probe before assuming", skill_file.read_text())
 

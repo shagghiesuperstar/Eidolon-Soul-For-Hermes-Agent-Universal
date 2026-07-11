@@ -394,12 +394,79 @@ def risk_of(candidate):
     return candidate.get("risk", "high")
 
 
+def _law_of_done_after_skill_update(lesson_text: str, bridge_status: str, bridge_detail: dict) -> None:
+    """Law of Done for SKILL_UPDATE: staging write → mark_done → proposals_applied.
+
+    Only increments proposals_applied when:
+      1) promote/judgment reported a successful SKILL_UPDATE (real staging .md write)
+      2) MemoryAdapter.mark_done() returns True for this lesson
+
+    Ledger-only success, bridge skip/fail, non-skill judgment, or failed mark_done
+    must not increment. Never raises.
+    """
+    if not _EIDOLON_AVAILABLE:
+        return
+    if bridge_status != "ok":
+        return
+    # ActionKind.SKILL_UPDATE value is "skill_update"
+    if bridge_detail.get("judgment_kind") != "skill_update":
+        return
+    if bridge_detail.get("judgment_status") != "ok":
+        return
+
+    adapter = _get_adapter()
+    if adapter is None:
+        _emit(
+            "dream.apply.mark_done",
+            "DEGRADED",
+            reason="adapter_unavailable",
+        )
+        return
+
+    try:
+        marked = adapter.mark_done(lesson_text)
+    except Exception as exc:  # noqa: BLE001
+        _emit(
+            "dream.apply.mark_done",
+            "DEGRADED",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+        return
+
+    if not marked:
+        _emit(
+            "dream.apply.mark_done",
+            "DEGRADED",
+            reason="no_matching_lesson",
+        )
+        return
+
+    try:
+        from eidolon.judgment.metrics import increment
+
+        eidolon_home_env = (
+            os.environ.get("EIDOLON_STATE_DIR") or os.environ.get("EIDOLON_HOME") or ""
+        ).strip()
+        eh = Path(eidolon_home_env) if eidolon_home_env else None
+        increment("proposals_applied", eidolon_home=eh)
+        _emit("dream.apply.proposals_applied", "PASS", counter="proposals_applied")
+    except Exception as exc:  # noqa: BLE001
+        _emit(
+            "dream.apply.proposals_applied",
+            "DEGRADED",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+
+
 def apply_low(candidate):
     """Apply LOW-risk lesson into Hermes Agent memory (what sessions load).
 
     1) Promote real lesson text into $HERMES_HOME/memories/MEMORY.md
        (injected every Hermes turn). Worthless template proposals are skipped.
-    2) Still append private ledger for audit/metrics.
+    2) Judgment Brain may write skills/_eidolon_staging/ for SKILL_UPDATE.
+    3) Law of Done: after a real staging skill write succeeds, mark_done the
+       lesson via MemoryAdapter and metrics.increment("proposals_applied").
+    4) Still append private ledger for audit (ledger-only is NOT Done).
     Never touches SOUL.md or config.yaml.
     """
     # Prefer lesson_content (actual teaching) over generic proposal blurb
@@ -433,6 +500,10 @@ def apply_low(candidate):
                 reason=f"{type(exc).__name__}: {exc}",
                 source_id=candidate.get("id"),
             )
+
+    # Law of Done (D3): only after real SKILL_UPDATE staging write + mark_done.
+    # Ledger success alone must never increment proposals_applied.
+    _law_of_done_after_skill_update(lesson_text, bridge_status, bridge_detail)
 
     rec = {
         "ts": time.time(),

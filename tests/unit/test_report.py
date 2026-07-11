@@ -62,6 +62,8 @@ class ReportTests(IsolatedHome):
             events.emit("dream.session", events.STATUS_INFO, source="test", mode="sessionend")
         events.emit("dream.lesson", events.STATUS_INFO, source="test", n=1)
         events.emit("dream.propose", events.STATUS_INFO, source="test", n=1)
+        # dream.apply is observed (non-empty window) but is NOT DONE: it must
+        # not drive top-level proposals_applied (Law-of-Done judgment metric).
         events.emit("dream.apply", events.STATUS_INFO, source="test", id="c1")
         events.emit("dream.rollback", events.STATUS_INFO, source="test", snapshot_id="x")
         events.emit("inference.request", events.STATUS_PASS, source="test")
@@ -75,7 +77,11 @@ class ReportTests(IsolatedHome):
         self.assertEqual(data["sessions_observed"], 3)
         self.assertEqual(data["lessons_added"], 1)
         self.assertEqual(data["proposals_generated"], 1)
-        self.assertEqual(data["proposals_applied"], 1)
+        self.assertEqual(
+            data["proposals_applied"],
+            0,
+            "dream.apply events alone must not set proposals_applied",
+        )
         self.assertEqual(data["rollback_count"], 1)
         self.assertEqual(data["inference_requests"], 1)
         self.assertEqual(data["inference_degraded"], 1)
