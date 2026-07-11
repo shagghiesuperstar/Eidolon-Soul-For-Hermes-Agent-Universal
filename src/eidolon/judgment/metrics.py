@@ -19,7 +19,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from eidolon.util import events
 
@@ -31,6 +31,9 @@ _ZERO: Dict[str, int] = {
     "skills_modified": 0,
     "config_changes": 0,
     "memory_retired": 0,
+    "memory_retained": 0,
+    "skipped": 0,
+    "failed": 0,
 }
 
 # Maps ActionKind string -> (counter_key, event_kind)
@@ -43,16 +46,18 @@ _ACTION_MAP = {
 }
 
 
-def _metrics_path() -> Path:
+def _metrics_path(eidolon_home: Optional[Path] = None) -> Path:
+    if eidolon_home is not None:
+        return Path(eidolon_home) / _FILENAME
     state_dir = os.environ.get("EIDOLON_STATE_DIR", "").strip()
     if state_dir:
         return Path(state_dir) / _FILENAME
     return Path.home() / ".eidolon" / _FILENAME
 
 
-def load() -> Dict[str, int]:
+def load(eidolon_home: Optional[Path] = None) -> Dict[str, int]:
     """Load lifetime judgment counters. Returns zeroed dict if file absent/corrupt."""
-    path = _metrics_path()
+    path = _metrics_path(eidolon_home)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
         return {k: int(raw.get(k, 0)) for k in _ZERO}
@@ -60,8 +65,8 @@ def load() -> Dict[str, int]:
         return dict(_ZERO)
 
 
-def _save(data: Dict[str, int]) -> None:
-    path = _metrics_path()
+def _save(data: Dict[str, int], eidolon_home: Optional[Path] = None) -> None:
+    path = _metrics_path(eidolon_home)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".jmetrics_", suffix=".tmp")
     try:
@@ -76,36 +81,50 @@ def _save(data: Dict[str, int]) -> None:
         raise
 
 
-def record(action_kind: str) -> None:
+def record(
+    action_kind: str,
+    status: Optional[str] = None,
+    lesson: Optional[str] = None,
+    eidolon_home: Optional[Path] = None,
+) -> None:
     """Increment counters for one judgment action and emit events.
 
-    Safe to call from hermes_bridge.py. Failures are caught and emitted
-    as DEGRADED events so the MEMORY.md write path is never blocked.
+    Optional ``eidolon_home`` overrides the existing EIDOLON_STATE_DIR /
+    ~/.eidolon path logic for isolated tests and explicit callers.
     """
     try:
-        data = load()
+        data = load(eidolon_home)
         data["lessons_judged"] = data.get("lessons_judged", 0) + 1
+        normalized_kind = str(action_kind).upper()
+        normalized_status = status or "ok"
 
-        # Emit the per-lesson event so windowed aggregation works.
+        if normalized_status == "skip":
+            data["skipped"] = data.get("skipped", 0) + 1
+        elif normalized_status == "fail":
+            data["failed"] = data.get("failed", 0) + 1
+        elif normalized_status == "ok" and normalized_kind == "MEMORY_RETAIN":
+            data["memory_retained"] = data.get("memory_retained", 0) + 1
+
         events.emit(
             "judgment.judged",
-            events.STATUS_OK,
+            events.STATUS_INFO,
             source="judgment.metrics",
-            action_kind=action_kind,
+            action_kind=normalized_kind,
+            status_detail=normalized_status,
         )
 
-        mapping = _ACTION_MAP.get(action_kind)
-        if mapping is not None:
+        mapping = _ACTION_MAP.get(normalized_kind)
+        if normalized_status == "ok" and mapping is not None:
             counter_key, event_kind = mapping
             data[counter_key] = data.get(counter_key, 0) + 1
             events.emit(
                 event_kind,
-                events.STATUS_OK,
+                events.STATUS_INFO,
                 source="judgment.metrics",
-                action_kind=action_kind,
+                action_kind=normalized_kind,
             )
 
-        _save(data)
+        _save(data, eidolon_home)
     except Exception as exc:  # noqa: BLE001
         events.emit(
             "judgment.metrics.error",
