@@ -7,8 +7,9 @@ Each ActionKind maps to a concrete file write:
                     (append-only, never rewrites invariants above the marker)
                     Auto-creates the marker if absent — works on any SOUL.md
                     including a brand-new Hermes install with no prior config.
-    SKILL_UPDATE  → appends lesson to $HERMES_HOME/skills/eidolon-learned.md
-                    (creates file + header if absent)
+    SKILL_UPDATE  → appends lesson to
+                    $HERMES_HOME/skills/_eidolon_staging/eidolon-learned.md
+                    (staging only — never live skills/; creates file + header)
     CONFIG_TUNE   → appends to $HERMES_HOME/memories/eidolon-prefs.md
                     (Hermes loads all .md files in memories/)
     MEMORY_RETIRE → removes matching lesson line from MEMORY.md
@@ -44,7 +45,13 @@ def _soul_path(hermes_home: Optional[Path]) -> Path:
 
 
 def _skill_path(hermes_home: Optional[Path]) -> Path:
-    p = _hermes_home(hermes_home) / "skills" / "eidolon-learned.md"
+    """Staging playbook path — never write live skills outside _eidolon_staging."""
+    p = (
+        _hermes_home(hermes_home)
+        / "skills"
+        / "_eidolon_staging"
+        / "eidolon-learned.md"
+    )
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 

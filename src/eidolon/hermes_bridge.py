@@ -10,7 +10,7 @@ v2.0 — Judgment Brain wired:
     executed immediately:
 
         SOUL_EDICT    → appended to SOUL.md EIDOLON EDICTS section
-        SKILL_UPDATE  → appended to skills/eidolon-learned.md
+        SKILL_UPDATE  → appended to skills/_eidolon_staging/eidolon-learned.md
         CONFIG_TUNE   → appended to memories/eidolon-prefs.md
         MEMORY_RETIRE → lesson line removed from MEMORY.md (baked in elsewhere)
         MEMORY_RETAIN → lesson stays in MEMORY.md (not yet actionable)

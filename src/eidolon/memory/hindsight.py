@@ -185,3 +185,59 @@ class HindsightAdapter(MemoryAdapter):
             removed=removed,
         )
         return removed
+
+    def mark_done(self, content: str, *, kind: Optional[str] = "lesson") -> bool:
+        """Set ``done=True`` on matching entries and rewrite ``hindsight.jsonl``.
+
+        Uses the real filesystem backend contract (same JSONL path as
+        ``store`` / ``retrieve`` / ``consolidate``).  No network calls.
+        Raises ``MemoryStoreError`` if the rewrite fails after a match was
+        found (write-side loud).  Returns ``False`` when nothing matched or
+        the store file is absent/unreadable.
+        """
+        path = _store_path()
+        if not path.exists():
+            return False
+
+        try:
+            raw_lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            emit(
+                "memory.mark_done",
+                STATUS_DEGRADED,
+                _SOURCE,
+                reason=f"mark_done read error: {exc}",
+            )
+            return False
+
+        entries: List[MemoryEntry] = []
+        found = False
+        for ln in raw_lines:
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                entry: MemoryEntry = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("content") == content and (
+                kind is None or entry.get("kind") == kind
+            ):
+                entry = {**entry, "done": True}
+                found = True
+            entries.append(entry)
+
+        if not found:
+            return False
+
+        try:
+            with path.open("w", encoding="utf-8") as fh:
+                for entry in entries:
+                    fh.write(
+                        json.dumps(entry, separators=(",", ":"), sort_keys=True)
+                        + "\n"
+                    )
+        except OSError as exc:
+            raise MemoryStoreError(f"hindsight mark_done write failed: {exc}") from exc
+
+        return True

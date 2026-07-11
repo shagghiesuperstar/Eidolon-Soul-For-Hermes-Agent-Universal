@@ -88,6 +88,19 @@ class MemoryAdapter(abc.ABC):
         operation is not supported by this adapter).
         """
 
+    @abc.abstractmethod
+    def mark_done(self, content: str, *, kind: Optional[str] = "lesson") -> bool:
+        """Mark stored entries matching *content* as done (leave soft inbox).
+
+        Sets ``entry["done"] = True`` on every match.  When *kind* is given
+        (default ``"lesson"``), only that kind is considered; pass
+        ``kind=None`` to match any kind.
+
+        Returns ``True`` if at least one matching entry exists (including when
+        it was already done — idempotent).  Returns ``False`` if nothing
+        matched.  Write failures raise ``MemoryStoreError`` (write-side loud).
+        """
+
     # ---------------------------------------------------------------------------
     # Helpers available to all subclasses
     # ---------------------------------------------------------------------------

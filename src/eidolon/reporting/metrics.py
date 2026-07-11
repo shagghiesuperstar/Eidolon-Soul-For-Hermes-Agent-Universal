@@ -11,7 +11,7 @@ Event kinds this aggregator recognises:
     dream.reflect      -> pattern_events += 1 (per record)
     dream.lesson       -> lessons_added += 1
     dream.propose      -> proposals_generated += 1
-    dream.apply        -> proposals_applied += 1
+    dream.apply        -> (observed for empty_state only; NOT DONE)
     dream.rollback     -> rollback_count += 1
     dream.session      -> sessions_observed += 1
     doctor.summary     -> doctor_runs += 1; last_doctor_status = status
@@ -22,6 +22,17 @@ Event kinds this aggregator recognises:
     judgment.skill     -> skills_modified += 1
     judgment.config    -> config_changes += 1
     judgment.retire    -> memory_retired += 1
+
+Vertical-slice scoreboard (v2.0 D4) — lifetime real-state integers, not
+windowed event counts and never ledger fakes:
+
+    lessons_extracted  -> persisted memory lessons (Hindsight JSONL)
+    proposals_applied  -> EXACTLY judgment metrics Law-of-Done counter
+                          from active Eidolon state (never max/floor/merge
+                          with dream.apply event counts; ledger/event apply
+                          attempts are NOT DONE)
+    skills_staged      -> *.md files under HERMES_HOME/skills/_eidolon_staging
+    inbox_cleared      -> persisted lessons with done=True
 """
 
 from __future__ import annotations
@@ -61,6 +72,10 @@ class Report:
     skills_modified: int = 0
     config_changes: int = 0
     memory_retired: int = 0
+    # Vertical-slice scoreboard (v2.0 D4) — real state, not ledger fakes
+    lessons_extracted: int = 0
+    skills_staged: int = 0
+    inbox_cleared: int = 0
     empty_state: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -108,7 +123,10 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
         elif kind == "dream.propose":
             r.proposals_generated += 1
         elif kind == "dream.apply":
-            r.proposals_applied += 1
+            # Event/ledger apply attempts are NOT DONE. Do not increment
+            # proposals_applied; the scoreboard field is set exclusively from
+            # persistent judgment metrics below.
+            pass
         elif kind == "dream.rollback":
             r.rollback_count += 1
         elif kind == "dream.session":
@@ -172,8 +190,23 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
     # truth for lifetime totals; events.jsonl gives the windowed view.
     try:
         from eidolon.judgment.metrics import load as _jload
+        from eidolon.util.paths import eidolon_state_dir
 
-        jm = _jload()
+        # Active Eidolon state (EIDOLON_STATE_DIR / EIDOLON_HOME / Hermes state).
+        # Fall back to default load() (~/.eidolon) for older judgment writes
+        # that did not pass an explicit home (other counters only).
+        jm = _jload(eidolon_state_dir())
+        jm_default = _jload()
+        for key in (
+            "lessons_judged",
+            "soul_edicts",
+            "skills_modified",
+            "config_changes",
+            "memory_retired",
+        ):
+            a = int(jm.get(key, 0) or 0)
+            b = int(jm_default.get(key, 0) or 0)
+            jm[key] = a if a >= b else b
         # Only overwrite if the persistent store shows more than what we
         # counted in the window — prevents double-counting on a cold log.
         if jm.get("lessons_judged", 0) > r.lessons_judged:
@@ -186,6 +219,32 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
             r.config_changes = jm["config_changes"]
         if jm.get("memory_retired", 0) > r.memory_retired:
             r.memory_retired = jm["memory_retired"]
+        # Scoreboard (D4): proposals_applied is EXACTLY the active-state
+        # Law-of-Done judgment metric integer. Never max/floor/merge with
+        # windowed dream.apply event counts — those are NOT DONE.
+        r.proposals_applied = int(jm.get("proposals_applied", 0) or 0)
+    except Exception:  # noqa: BLE001 — reporting must never crash
+        pass
+
+    # Scoreboard (D4): real filesystem / memory state, never ledger fakes.
+    try:
+        from eidolon.util.paths import hermes_home
+
+        staging = hermes_home() / "skills" / "_eidolon_staging"
+        if staging.is_dir():
+            r.skills_staged = sum(
+                1 for p in staging.iterdir() if p.is_file() and p.suffix == ".md"
+            )
+    except Exception:  # noqa: BLE001 — reporting must never crash
+        pass
+
+    try:
+        from eidolon.memory.hindsight import HindsightAdapter
+
+        # High limit: scoreboard is lifetime state, not a sample window.
+        lessons = HindsightAdapter().retrieve(kind="lesson", limit=100_000)
+        r.lessons_extracted = len(lessons)
+        r.inbox_cleared = sum(1 for e in lessons if e.get("done") is True)
     except Exception:  # noqa: BLE001 — reporting must never crash
         pass
 

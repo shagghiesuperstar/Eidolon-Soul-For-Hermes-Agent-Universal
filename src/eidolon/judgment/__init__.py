@@ -16,12 +16,13 @@ Exit-code contract (anti-fragile, never silent):
 """
 from .classifier import ActionKind, classify_lesson
 from .executor import execute_judgment
-from .metrics import load_metrics, record_judgment
+from .metrics import increment, load_metrics, record_judgment
 
 __all__ = [
     "ActionKind",
     "classify_lesson",
     "execute_judgment",
+    "increment",
     "load_metrics",
     "record_judgment",
 ]

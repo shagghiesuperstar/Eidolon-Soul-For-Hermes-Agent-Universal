@@ -70,6 +70,18 @@ class InMemAdapter(MemoryAdapter):
         """No-op: volatile stores don't need consolidation.  Returns 0."""
         return 0
 
+    def mark_done(self, content: str, *, kind: Optional[str] = "lesson") -> bool:
+        """Set ``done=True`` on matching in-process entries.  Mutates the store."""
+        found = False
+        for entry in self._store:
+            if entry.get("content") != content:
+                continue
+            if kind is not None and entry.get("kind") != kind:
+                continue
+            entry["done"] = True
+            found = True
+        return found
+
     # ------------------------------------------------------------------
     # Test helpers (not part of the MemoryAdapter interface)
     # ------------------------------------------------------------------
