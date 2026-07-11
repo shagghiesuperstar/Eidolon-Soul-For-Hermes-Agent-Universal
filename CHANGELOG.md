@@ -8,6 +8,12 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Hermes memory bridge (`eidolon.hermes_bridge`):** LOW applies promote real
+  lesson text into `$HERMES_HOME/memories/MEMORY.md` (what Hermes injects every
+  session). Template "Improve handling of…" proposals are skipped. Dedup +
+  bounded section. Private ledger retained for audit only.
+
 ### Fixed
 - **Hermes-native provider cache:** infer json_mode + 128k context from non-empty models lists so doctor provider_capability PASSes on real hosts.
 
