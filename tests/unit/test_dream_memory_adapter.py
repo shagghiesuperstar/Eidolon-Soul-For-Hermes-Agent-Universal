@@ -189,7 +189,9 @@ class TestPropose(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         stored = adapter.retrieve(kind="proposal")
         self.assertEqual(len(stored), 1)
-        self.assertIn("reflection", stored[0]["content"])
+        # Primary content is the lesson teaching text (Hermes-facing), not a template
+        self.assertIn("some lesson", stored[0]["content"])
+        self.assertEqual(stored[0].get("lesson_content"), "some lesson")
 
     def test_propose_degrades_on_store_error(self):
         """Store failure must not raise — candidate is still returned."""
