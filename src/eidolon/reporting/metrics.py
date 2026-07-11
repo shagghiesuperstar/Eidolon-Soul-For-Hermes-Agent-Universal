@@ -17,6 +17,11 @@ Event kinds this aggregator recognises:
     doctor.summary     -> doctor_runs += 1; last_doctor_status = status
     inference.request  -> inference_requests += 1
     inference.degraded -> inference_degraded += 1
+    judgment.judged    -> lessons_judged += 1
+    judgment.soul      -> soul_edicts += 1
+    judgment.skill     -> skills_modified += 1
+    judgment.config    -> config_changes += 1
+    judgment.retire    -> memory_retired += 1
 """
 
 from __future__ import annotations
@@ -50,6 +55,12 @@ class Report:
     bandit_arms: int = 0
     bandit_episodes: int = 0
     preference_pairs: int = 0
+    # Judgment Brain counters (v2.0)
+    lessons_judged: int = 0
+    soul_edicts: int = 0
+    skills_modified: int = 0
+    config_changes: int = 0
+    memory_retired: int = 0
     empty_state: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -117,6 +128,17 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
             iters = rec.get("iterations", 0)
             if isinstance(iters, int):
                 r.bandit_episodes += iters
+        # Judgment Brain event kinds (v2.0)
+        elif kind == "judgment.judged":
+            r.lessons_judged += 1
+        elif kind == "judgment.soul":
+            r.soul_edicts += 1
+        elif kind == "judgment.skill":
+            r.skills_modified += 1
+        elif kind == "judgment.config":
+            r.config_changes += 1
+        elif kind == "judgment.retire":
+            r.memory_retired += 1
 
     # Fold in-file replay buffer counter (survives event log rotation).
     try:
@@ -142,6 +164,28 @@ def build(window: str = "24h", *, now_ts: float | None = None) -> Report:
         from eidolon.learning.preferences import count as _pref_count
 
         r.preference_pairs = _pref_count()
+    except Exception:  # noqa: BLE001 — reporting must never crash
+        pass
+
+    # Fold judgment counters from persistent judgment metrics store.
+    # This survives event-log rotation: the judgment store is the source of
+    # truth for lifetime totals; events.jsonl gives the windowed view.
+    try:
+        from eidolon.judgment.metrics import load as _jload
+
+        jm = _jload()
+        # Only overwrite if the persistent store shows more than what we
+        # counted in the window — prevents double-counting on a cold log.
+        if jm.get("lessons_judged", 0) > r.lessons_judged:
+            r.lessons_judged = jm["lessons_judged"]
+        if jm.get("soul_edicts", 0) > r.soul_edicts:
+            r.soul_edicts = jm["soul_edicts"]
+        if jm.get("skills_modified", 0) > r.skills_modified:
+            r.skills_modified = jm["skills_modified"]
+        if jm.get("config_changes", 0) > r.config_changes:
+            r.config_changes = jm["config_changes"]
+        if jm.get("memory_retired", 0) > r.memory_retired:
+            r.memory_retired = jm["memory_retired"]
     except Exception:  # noqa: BLE001 — reporting must never crash
         pass
 

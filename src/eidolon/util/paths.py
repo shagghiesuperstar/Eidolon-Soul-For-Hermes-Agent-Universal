@@ -27,9 +27,14 @@ def hermes_home() -> Path:
 def eidolon_state_dir() -> Path:
     """Directory Eidolon owns exclusively for its own state.
 
-    Precedence: $EIDOLON_HOME > $HERMES_HOME/state/eidolon > ~/.hermes/state/eidolon
+    Precedence: $EIDOLON_STATE_DIR > $EIDOLON_HOME >
+    $HERMES_HOME/state/eidolon > ~/.hermes/state/eidolon.
+
+    ``EIDOLON_STATE_DIR`` is the explicit report/judgment isolation override;
+    honoring it here keeps events and persistent judgment metrics in the same
+    state tree instead of accidentally reading the live host event log.
     """
-    override = os.environ.get("EIDOLON_HOME")
+    override = os.environ.get("EIDOLON_STATE_DIR") or os.environ.get("EIDOLON_HOME")
     if override:
         p = Path(override).expanduser().resolve()
     else:

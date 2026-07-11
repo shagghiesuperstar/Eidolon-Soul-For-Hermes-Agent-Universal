@@ -29,6 +29,12 @@ def _delta(report: Report, prev: Report) -> dict:
         "proposals_applied": d(report.proposals_applied, prev.proposals_applied),
         "rollback_count": d(report.rollback_count, prev.rollback_count),
         "inference_requests": d(report.inference_requests, prev.inference_requests),
+        # Judgment Brain counters (v2.0)
+        "lessons_judged": d(report.lessons_judged, prev.lessons_judged),
+        "soul_edicts": d(report.soul_edicts, prev.soul_edicts),
+        "skills_modified": d(report.skills_modified, prev.skills_modified),
+        "config_changes": d(report.config_changes, prev.config_changes),
+        "memory_retired": d(report.memory_retired, prev.memory_retired),
     }
 
 
@@ -47,6 +53,13 @@ def _print_human(report: Report, delta: dict) -> None:
     print(f"  inference requests       : {report.inference_requests:>6}  ({delta['inference_requests']:+d})")
     print(f"  inference degraded       : {report.inference_degraded:>6}")
     print(f"  last doctor status       : {report.last_doctor_status}")
+    print()
+    print("  — judgment brain (v2.0) —")
+    print(f"  lessons judged           : {report.lessons_judged:>6}  ({delta['lessons_judged']:+d})")
+    print(f"  soul edicts written      : {report.soul_edicts:>6}  ({delta['soul_edicts']:+d})")
+    print(f"  skills modified          : {report.skills_modified:>6}  ({delta['skills_modified']:+d})")
+    print(f"  config changes           : {report.config_changes:>6}  ({delta['config_changes']:+d})")
+    print(f"  memory lines retired     : {report.memory_retired:>6}  ({delta['memory_retired']:+d})")
     if report.notes:
         print("\nnotes:")
         for n in report.notes:
