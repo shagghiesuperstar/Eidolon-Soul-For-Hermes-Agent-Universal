@@ -113,3 +113,8 @@ def record(action_kind: str) -> None:
             source="judgment.metrics",
             error=str(exc),
         )
+
+
+# Aliases for public API used by init.py and report wiring
+load_metrics = load
+record_judgment = record
