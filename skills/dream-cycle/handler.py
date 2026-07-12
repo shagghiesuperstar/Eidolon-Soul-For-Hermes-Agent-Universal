@@ -243,6 +243,14 @@ def extract_lessons(
                 skipped=result.skipped,
                 failed=result.failed,
             )
+            if result.flushed:
+                try:
+                    from eidolon.judgment.metrics import increment
+                    for _ in range(result.flushed):
+                        increment("memory_retained", eidolon_home=_eidolon_state_home())
+                except Exception as exc:  # noqa: BLE001
+                    _emit("dream.lesson.metrics", "DEGRADED",
+                          reason=f"{type(exc).__name__}: {exc}")
             if result.failed:
                 _emit(
                     "dream.lesson.flush",
