@@ -644,12 +644,53 @@ def _ensure_first_snapshot(state) -> None:
             )
 
 
+
+def _eidolon_state_home() -> Path:
+    for env in ("EIDOLON_STATE_DIR", "EIDOLON_HOME"):
+        raw = os.environ.get(env, "").strip()
+        if raw:
+            return Path(raw)
+    return Path.home() / ".eidolon"
+
+
+def _flush_stale_outbox() -> None:
+    """Drain pending outbox entries left by prior crashed cycles. Never raises."""
+    if not _EIDOLON_AVAILABLE or _Outbox is None:
+        return
+    adapter = _get_adapter()
+    if adapter is None:
+        return
+    try:
+        ob = _Outbox(home=_eidolon_state_home())
+        pending_before = ob.pending_count()
+        if pending_before == 0:
+            return
+        result = ob.flush(adapter)
+        _emit("dream.outbox.drain", "INFO", pending_before=pending_before,
+              flushed=result.flushed, skipped=result.skipped, failed=result.failed)
+        if result.flushed:
+            try:
+                from eidolon.judgment.metrics import increment
+                for _ in range(result.flushed):
+                    increment("memory_retained", eidolon_home=_eidolon_state_home())
+            except Exception as exc:  # noqa: BLE001
+                _emit("dream.outbox.drain", "DEGRADED",
+                      reason=f"metrics:{type(exc).__name__}: {exc}")
+        if result.failed:
+            _emit("dream.outbox.drain", "DEGRADED", failed=result.failed,
+                  reason="entries remain pending for next cycle")
+    except Exception as exc:  # noqa: BLE001
+        _emit("dream.outbox.drain", "DEGRADED", reason=f"{type(exc).__name__}: {exc}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["sessionend", "scheduled"], default="sessionend")
     args = ap.parse_args()
 
     _emit("dream.session", "INFO", mode=args.mode)
+
+    _flush_stale_outbox()
 
     state = load_state()
     episodes = ingest(args.mode)
