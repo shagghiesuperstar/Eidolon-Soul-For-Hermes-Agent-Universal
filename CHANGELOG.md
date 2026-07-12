@@ -9,6 +9,11 @@ Versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **P1 — Dream metrics all-zero (canary 2026-07-12):** `extract_lessons()` now
+  calls `metrics.increment("memory_retained")` once per flushed lesson. After
+  139 runs all counters read zero because a normal lesson flush touched no
+  counter (only the SKILL_UPDATE+mark_done path incremented `proposals_applied`).
+  New `tests/unit/test_dream_metrics_record.py::test_lesson_flush_increments_counter`.
 - **P1 — Outbox flush loop-closer (canary 2026-07-12):** the dream cycle now
   drains stale `outbox/pending.jsonl` entries at the start of every run via
   `_flush_stale_outbox()`. Previously the per-function flushes in
