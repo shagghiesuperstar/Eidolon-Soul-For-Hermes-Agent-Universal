@@ -8,6 +8,18 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **P1 — Outbox flush loop-closer (canary 2026-07-12):** the dream cycle now
+  drains stale `outbox/pending.jsonl` entries at the start of every run via
+  `_flush_stale_outbox()`. Previously the per-function flushes in
+  `extract_lessons`/`propose` only drained entries captured in that same call,
+  so lessons captured by a prior crashed cycle never reached the backend
+  (canary: 16 captured / 16 pending / 0 flushed). Drained lessons also
+  increment `memory_retained`. New
+  `tests/unit/test_outbox_flush_drains.py::test_flush_drains_pending`
+  (fails before, passes after).
+
+
 ### Added
 - **Hermes memory bridge (`eidolon.hermes_bridge`):** LOW applies promote real
   lesson text into `$HERMES_HOME/memories/MEMORY.md` (what Hermes injects every
