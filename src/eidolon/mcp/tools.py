@@ -174,9 +174,23 @@ def _handle_hindsight_retain(args: Mapping[str, Any]) -> Dict[str, Any]:
         from eidolon.memory.hindsight import HindsightAdapter
         from eidolon.outbox import Outbox
 
+        # Idempotency: check for exact-content duplicate within the same kind
+        # before writing.  The Outbox already skips duplicates at the adapter
+        # level, but HindsightAdapter is append-only so we check here.
+        adapter = HindsightAdapter()
+        existing = adapter.retrieve(kind=str(kind), limit=10_000)
+        for prev in existing:
+            if prev.get("content") == str(content):
+                return {
+                    "status": "PASS",
+                    "flushed": 0,
+                    "skipped": 1,
+                    "failed": 0,
+                }
+
         box = Outbox()
         box.capture(entry)
-        result = box.flush(HindsightAdapter())
+        result = box.flush(adapter)
     except Exception as exc:  # noqa: BLE001
         return {
             "error": {"code": "store_error", "message": str(exc)},

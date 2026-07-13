@@ -132,7 +132,11 @@ class Outbox:
                 exc_name = type(exc).__name__
                 # Idempotency: duplicate-key errors from adapters that enforce
                 # uniqueness are treated as skip, not failure.
-                if "duplicate" in exc_name.lower() or "exists" in str(exc).lower():
+                # Accept "duplicate" / "exists" in either the class name or
+                # the message so both named exceptions and message-based
+                # signals (e.g. MemoryStoreError("duplicate entry: ..."))
+                # trigger the skip path.
+                if "duplicate" in exc_name.lower() or "duplicate" in str(exc).lower() or "exists" in str(exc).lower():
                     skipped += 1
                 else:
                     failed_entries.append(entry)

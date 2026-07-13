@@ -42,12 +42,12 @@ def _pick_free_port() -> int:
 
 class ToolsRegistryTests(unittest.TestCase):
     def test_exactly_three_tools(self):
-        self.assertEqual(len(mcp_tools.TOOLS), 3)
+        self.assertEqual(len(mcp_tools.TOOLS), 4)
 
     def test_tool_names(self):
         self.assertEqual(
             set(mcp_tools.TOOLS.keys()),
-            {"eidolon.report", "eidolon.doctor", "eidolon.learn.step"},
+            {"eidolon.report", "eidolon.doctor", "eidolon.learn.step", "eidolon.hindsight.retain"},
         )
 
     def test_manifest_shape(self):
@@ -136,7 +136,7 @@ class RPCUnitTests(unittest.TestCase):
 
     def test_tools_list_returns_three(self):
         resp = self._rpc("tools/list", {})
-        self.assertEqual(len(resp["result"]["tools"]), 3)
+        self.assertEqual(len(resp["result"]["tools"]), 4)
 
     def test_tools_call_report(self):
         resp = self._rpc(
@@ -232,7 +232,7 @@ class LiveServerTests(unittest.TestCase):
 
     def test_tools_list_over_http(self):
         resp = self._post({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        self.assertEqual(len(resp["result"]["tools"]), 3)
+        self.assertEqual(len(resp["result"]["tools"]), 4)
 
     def test_tools_call_doctor_over_http(self):
         resp = self._post(
