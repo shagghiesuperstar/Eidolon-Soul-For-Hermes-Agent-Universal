@@ -1,5 +1,10 @@
 # Eidolon — Universal Self-Improvement Layer for Hermes Agents
 
+> **v2.0.0 · pre‑stable** — under active development. PyPI release, stable
+> DOI, and a formal upgrade path are tracked in the roadmap. The CLI and
+> dream‑cycle are functional; expect breaking changes between minor versions
+> until v2.1.
+
 [![adversarial](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/adversarial.yml)
 [![installer-test](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/installer-test.yml)
 [![release](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/release.yml/badge.svg)](https://github.com/shagghiesuperstar/Eidolon-Soul-For-Hermes-Agent-Universal/actions/workflows/release.yml)
