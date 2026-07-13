@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """MCP tool definitions and dispatcher for Eidolon.
 
-Three tools, all pure-Python calls into existing command modules. No shell
-outshells, no subprocess, no network. Each tool returns the same structured
+Four tools, all pure-Python calls into existing modules. No shell
+out, no subprocess, no network. Each tool returns the same structured
 data the CLI would emit with ``--json``.
 
 Tool schema follows the MCP spec's ``inputSchema`` (JSON-Schema draft-07
@@ -135,6 +135,66 @@ def _handle_learn_step(args: Mapping[str, Any]) -> Dict[str, Any]:
     return {"exit_code": exit_code, "status": status, "iterations": iterations, "seed": seed}
 
 
+def _handle_hindsight_retain(args: Mapping[str, Any]) -> Dict[str, Any]:
+    """Capture one lesson into the Hindsight JSONL store via the Outbox.
+
+    Required fields: ``kind`` (str), ``content`` (str).
+    Optional:        ``source`` (str, default ""), ``ts`` (float).
+
+    Returns a dict with ``flushed``, ``skipped``, ``failed`` — mirrors
+    ``FlushResult``.  On bad input or write failure, returns
+    ``{"error": {"code": ..., "message": ...}}`` with ``status`` DEGRADED;
+    never raises into the MCP server.
+
+    Degradation contract (anti-fragile, loud):
+    - Missing required field  → error code ``missing_field``, status DEGRADED.
+    - EIDOLON_HOME absent/unwritable → error code ``store_error``, status DEGRADED.
+    - Any unexpected exception → error code ``internal``, status DEGRADED.
+    Caller must treat DEGRADED as a signal to inspect ``eidolon doctor``.
+    """
+    kind = args.get("kind", "")
+    content = args.get("content", "")
+    if not kind:
+        return {"error": {"code": "missing_field", "message": "'kind' is required"}, "status": "DEGRADED"}
+    if not content:
+        return {"error": {"code": "missing_field", "message": "'content' is required"}, "status": "DEGRADED"}
+
+    entry: Dict[str, Any] = {"kind": str(kind), "content": str(content)}
+    source = args.get("source", "")
+    if source:
+        entry["source"] = str(source)
+    ts = args.get("ts")
+    if ts is not None:
+        try:
+            entry["ts"] = float(ts)
+        except (TypeError, ValueError):
+            pass  # omit bad ts; Outbox.capture will stamp it
+
+    try:
+        from eidolon.memory.hindsight import HindsightAdapter
+        from eidolon.outbox import Outbox
+
+        box = Outbox()
+        box.capture(entry)
+        result = box.flush(HindsightAdapter())
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "error": {"code": "store_error", "message": str(exc)},
+            "status": "DEGRADED",
+            "flushed": 0,
+            "skipped": 0,
+            "failed": 1,
+        }
+
+    status = "PASS" if result.failed == 0 else "DEGRADED"
+    return {
+        "status": status,
+        "flushed": result.flushed,
+        "skipped": result.skipped,
+        "failed": result.failed,
+    }
+
+
 # --- Registry -----------------------------------------------------------
 
 
@@ -199,6 +259,42 @@ TOOLS: Dict[str, Tool] = {
             "additionalProperties": False,
         },
         handler=_handle_learn_step,
+    ),
+    "eidolon.hindsight.retain": Tool(
+        name="eidolon.hindsight.retain",
+        description=(
+            "Persist one lesson into the Hindsight JSONL store via the "
+            "crash-safe Outbox pipeline. Required: kind (str), content (str). "
+            "Optional: source (str), ts (float unix timestamp). "
+            "Returns flushed/skipped/failed counts and a status "
+            "(PASS or DEGRADED). DEGRADED means the entry did not land — "
+            "run eidolon.doctor to investigate."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "description": "Entry kind, e.g. 'lesson', 'observation'.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The lesson or observation text to persist.",
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Optional originating source identifier.",
+                    "default": "",
+                },
+                "ts": {
+                    "type": "number",
+                    "description": "Optional Unix timestamp. Stamped automatically if omitted.",
+                },
+            },
+            "required": ["kind", "content"],
+            "additionalProperties": False,
+        },
+        handler=_handle_hindsight_retain,
     ),
 }
 
