@@ -38,11 +38,22 @@ def _delta(report: Report, prev: Report) -> dict:
     }
 
 
+def _print_scoreboard(report: Report) -> None:
+    """Print the four human-readable scoreboard counters (Issue #46)."""
+    print()
+    print("  ── scoreboard ──")
+    print(f"  Lessons extracted   : {report.lessons_extracted:>6}")
+    print(f"  Proposals applied   : {report.proposals_applied:>6}")
+    print(f"  Skills staged       : {report.skills_staged:>6}")
+    print(f"  Inbox cleared       : {report.inbox_cleared:>6}")
+
+
 def _print_human(report: Report, delta: dict) -> None:
     if report.empty_state:
         print("Eidolon report — no events in the requested window yet.")
         print("This is expected on a fresh install; the first dream-cycle run will")
         print("populate metrics. Verify install with `eidolon doctor`.")
+        _print_scoreboard(report)
         return
     print(f"Eidolon report — window: {report.window}")
     print(f"  sessions observed        : {report.sessions_observed:>6}  ({delta['sessions_observed']:+d})")
@@ -60,6 +71,7 @@ def _print_human(report: Report, delta: dict) -> None:
     print(f"  skills modified          : {report.skills_modified:>6}  ({delta['skills_modified']:+d})")
     print(f"  config changes           : {report.config_changes:>6}  ({delta['config_changes']:+d})")
     print(f"  memory lines retired     : {report.memory_retired:>6}  ({delta['memory_retired']:+d})")
+    _print_scoreboard(report)
     if report.notes:
         print("\nnotes:")
         for n in report.notes:

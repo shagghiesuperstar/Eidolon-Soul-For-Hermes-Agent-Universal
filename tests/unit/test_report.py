@@ -101,6 +101,33 @@ class ReportTests(IsolatedHome):
             with self.assertRaises(ValueError):
                 parse_window(bad)
 
+    # -------------------------------------------------------------------------
+    # Issue #46: human-readable scoreboard
+    # -------------------------------------------------------------------------
+
+    def test_human_scoreboard_labels_present(self) -> None:
+        """eidolon report (no flags) exits 0 and prints all four scoreboard labels."""
+        code, out = self._run(["report"])
+        self.assertEqual(code, 0, f"expected exit 0, got {code}\noutput:\n{out}")
+        for label in (
+            "lessons extracted",
+            "proposals applied",
+            "skills staged",
+            "inbox cleared",
+        ):
+            self.assertIn(
+                label,
+                out.lower(),
+                f"scoreboard label {label!r} missing from human output:\n{out}",
+            )
+
+    def test_human_fresh_install_exits_zero_no_crash(self) -> None:
+        """Fresh install (empty state): eidolon report exits 0, no traceback."""
+        code, out = self._run(["report"])
+        self.assertEqual(code, 0, f"expected exit 0 on fresh install, got {code}\noutput:\n{out}")
+        self.assertNotIn("Traceback", out, "traceback in human output on fresh install")
+        self.assertNotIn("Error", out, "unexpected Error in output on fresh install")
+
 
 if __name__ == "__main__":
     unittest.main()
