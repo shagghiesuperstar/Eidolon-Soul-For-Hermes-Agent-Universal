@@ -65,6 +65,80 @@ Every Eidolon component emits structured events into `$EIDOLON_HOME/events.jsonl
 log and prints integers you can plot. Empty state prints zeros with a first-run
 banner — never `null`, never `N/A`.
 
+### `eidolon report` — human-readable scoreboard
+
+Running `eidolon report` with no flags prints a full human-readable output
+including a four-counter **scoreboard** at the bottom:
+
+```
+Eidolon report — no events in the requested window yet.
+This is expected on a fresh install; the first dream-cycle run will
+populate metrics. Verify install with `eidolon doctor`.
+
+  ── scoreboard ──
+  Lessons extracted   :      0
+  Proposals applied   :      0
+  Skills staged       :      0
+  Inbox cleared       :      0
+```
+
+After the first dream-cycle run the output includes windowed metrics and the
+scoreboard reflects real persistent state:
+
+```
+Eidolon report — window: 24h
+  sessions observed        :      3  (+3)
+  lessons added            :     12  (+12)
+  proposals generated      :      4  (+4)
+  proposals applied        :      2  (+2)
+  ...
+
+  ── scoreboard ──
+  Lessons extracted   :     12
+  Proposals applied   :      2
+  Skills staged       :      1
+  Inbox cleared       :      9
+```
+
+The four scoreboard counters are **real persistent-state integers** (not windowed
+event counts): `lessons_extracted` counts persisted Hindsight JSONL entries,
+`proposals_applied` is the Law-of-Done judgment counter, `skills_staged` counts
+`*.md` files under `$HERMES_HOME/skills/_eidolon_staging`, and `inbox_cleared`
+is lessons with `done=True`.
+
+### `eidolon report --json` — machine-readable output
+
+Pass `--json` to get raw JSON on stdout (schema 1, stable):
+
+```bash
+eidolon report --json
+```
+
+Output format (all fields are integers >= 0; `schema` is always `1`):
+
+```json
+{
+  "schema": 1,
+  "window": "24h",
+  "empty_state": true,
+  "sessions_observed": 0,
+  "lessons_added": 0,
+  "proposals_generated": 0,
+  "proposals_applied": 0,
+  "rollback_count": 0,
+  "inference_requests": 0,
+  "inference_degraded": 0,
+  "lessons_extracted": 0,
+  "skills_staged": 0,
+  "inbox_cleared": 0,
+  "delta": { ... },
+  "has_baseline": false
+}
+```
+
+Consumers must pin `schema=1` and fail loudly on mismatch. The `--json` schema
+is not modified by this change.
+
 ## Install
 
 One-liner (macOS + Linux + WSL2, Python 3.10–3.13):

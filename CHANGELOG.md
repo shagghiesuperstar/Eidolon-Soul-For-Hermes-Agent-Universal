@@ -8,6 +8,9 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `eidolon report` prints a human-readable scoreboard: lessons extracted, proposals applied, skills staged, inbox cleared (#46)
+
 ### Fixed
 - **P1 — Dream metrics all-zero (canary 2026-07-12):** `extract_lessons()` now
   calls `metrics.increment("memory_retained")` once per flushed lesson. After
