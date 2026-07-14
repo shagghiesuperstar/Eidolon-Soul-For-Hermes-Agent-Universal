@@ -54,29 +54,78 @@ def run_handler(path, mode=None, timeout=60):
         return {"exit": -1, "error": str(e)}
 
 
+# Matches lines like:  memory.backend: hindsight
+_MEMORY_BACKEND_RE = re.compile(
+    r"^\s*memory\.backend\s*:\s*(?P<value>[^#\s]+)",
+    re.MULTILINE,
+)
+
+
+def _read_memory_backend() -> str:
+    """Return the active memory backend from Hermes config.yaml.
+
+    Reads ``memory.backend`` the same way ``eidolon.memory.loader`` does.
+    Defaults to ``"hindsight"`` when the key is absent or the file is
+    unreadable — matching the loader's fallback behaviour.
+    """
+    config_path = HERMES_HOME / "config.yaml"
+    if not config_path.exists():
+        return "hindsight"
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return "hindsight"
+    m = _MEMORY_BACKEND_RE.search(text)
+    if m:
+        return m.group("value").strip()
+    return "hindsight"
+
+
 # ---------- Observation capture (the part that gives the weekly report its teeth) ----------
 
-def capture_hindsight_status():
-    """Check if Hindsight is reachable. The whole back half of the pipeline is gated on this.
+def capture_memory_status():
+    """Check whether the configured Hermes memory backend is reachable.
 
-    The actual config schema (as observed on a live Hermes host) is:
-      {
-        "mode": "remote",
-        "api_url": "http://<host>:<port>",
-        "bank_id": "hermes",
-        "agent_id": "<agent-name>",
-        ...
-      }
-    Older env-based fallback: HINDSIGHT_URL=http://localhost:9077.
+    Hermes supports several memory providers (Hindsight, Mem0, Byterover,
+    in-memory …).  This function reads ``memory.backend`` from
+    ``$HERMES_HOME/config.yaml`` and probes accordingly.
 
-    For local_embedded mode, the daemon auto-idles after ``idle_timeout``
-    seconds (default 300).  An empty port during idle is NORMAL — not an
-    outage.  The probe explicitly wakes the daemon by posting a recall
-    request before checking health, so the report reflects actual
-    reachability rather than idle-state noise.
+    Backend-specific behaviour
+    --------------------------
+    * **hindsight** — probes the daemon's ``/health`` and ``/v1/default/banks``
+      endpoints.  For ``local_embedded`` mode, posts a wake-up recall request
+      first because the daemon auto-idles after ``idle_timeout`` seconds.
+    * **inmem** — always reachable (in-process, no network).
+    * **mem0 / byterover / other** — returns ``reachable: null`` with a note
+      that probe logic hasn't been implemented yet.  This is NOT treated as
+      an outage — it means the backend hasn't been taught to the monitor.
+
+    Returns a dict with at least ``{"backend": str, "reachable": bool|null}``.
+    """
+
+    backend = _read_memory_backend()
+
+    if backend == "inmem":
+        return {"backend": "inmem", "reachable": True,
+                "reason": "in-memory adapter always reachable"}
+
+    if backend == "hindsight":
+        return _probe_hindsight()
+
+    # Backend we haven't taught the monitor how to probe yet.
+    # Not an outage — just not implemented.
+    return {"backend": backend, "reachable": None,
+            "reason": f"no probe implemented for backend '{backend}'"}
+
+
+def _probe_hindsight():
+    """Probe a Hindsight daemon using its HTTP API.
+
+    Kept as a private helper so the Hindsight-specific curl + urllib logic
+    doesn't pollute the backend-agnostic ``capture_memory_status``.
     """
     if not HINDSIGHT_CONFIG.exists():
-        return {"reachable": False, "reason": "no config"}
+        return {"backend": "hindsight", "reachable": False, "reason": "no config"}
 
     try:
         cfg = json.loads(HINDSIGHT_CONFIG.read_text())
@@ -93,7 +142,7 @@ def capture_hindsight_status():
             mode = "legacy"
 
         if not api_url:
-            return {"reachable": False, "reason": "no URL in config", "config": cfg}
+            return {"backend": "hindsight", "reachable": False, "reason": "no URL in config", "config": cfg}
 
         api_base = api_url.rstrip("/")
 
@@ -121,7 +170,7 @@ def capture_hindsight_status():
             f"{api_base}/health",
             f"{api_base}/v1/default/banks",
         ]
-        result = {"mode": mode, "api_url": api_url, "bank_id": bank_id,
+        result = {"backend": "hindsight", "mode": mode, "api_url": api_url, "bank_id": bank_id,
                   "agent_id": agent_id, "idle_timeout": idle_timeout, "reachable": False, "probes": []}
         for purl in probe_urls:
             r = subprocess.run(["curl", "-sS", "--max-time", "5", "-o", "/dev/null",
@@ -139,7 +188,7 @@ def capture_hindsight_status():
         result["reason"] = "all probes failed (service unreachable)"
         return result
     except Exception as e:
-        return {"reachable": False, "reason": f"probe error: {e}"}
+        return {"backend": "hindsight", "reachable": False, "reason": f"probe error: {e}"}
 
 
 def capture_lessons_state():
@@ -273,17 +322,14 @@ def detect_drift_signals():
                 if big_gaps:
                     signals.append(f"dream-cycle missed {len(big_gaps)} expected hourly runs in last 24h (gaps >1.5h)")
 
-    # Hindsight configured but unreachable (root cause for stages 2-3 no-op)
-    h = capture_hindsight_status()
-    if h.get("reason") == "no config":
-        signals.append("hindsight has no config — stage 2/3 pipeline silently no-ops")
-    elif not h.get("reachable"):
-        api_url = h.get("api_url", "?")
-        mode = h.get("mode", "?")
-        bank = h.get("bank_id", "?")
+    # Memory backend configured but unreachable (root cause for stages 2-3 no-op)
+    m = capture_memory_status()
+    if not m.get("reachable") and m.get("reachable") is not None:
+        backend = m.get("backend", "?")
+        reason = m.get("reason", "?")
         signals.append(
-            f"hindsight configured ({mode}, {api_url}, bank={bank}) but UNREACHABLE — "
-            f"stage 2/3 silently no-ops. Network/service fix needed, not config fix."
+            f"memory backend '{backend}' not reachable — {reason}. "
+            f"stage 2/3 may silently no-op."
         )
 
     # Lessons file empty after multiple runs
@@ -311,7 +357,7 @@ def build_snapshot(history):
     dc_state = capture_dream_cycle_state()
     w_state = capture_watchdog_state()
     ls_state = capture_lessons_state()
-    hindsight = capture_hindsight_status()
+    memory = capture_memory_status()
     drift = detect_drift_signals()
 
     snapshot = {
@@ -338,7 +384,7 @@ def build_snapshot(history):
             "lessons_exists": ls_state["exists"],
             "lessons_lines": ls_state["lines"],
         },
-        "hindsight": hindsight,
+        "memory": memory,
         "drift_signals": drift,
     }
     return snapshot
@@ -385,7 +431,7 @@ def build_daily_report(history, stability):
 - **Watchdog open incidents**: {last['watchdog']['open_incidents']}
 - **Total dream-cycle runs (cumulative)**: {last['state']['dream_runs']}
 - **Lessons file**: {"present" if last['state']['lessons_exists'] else "absent"} ({last['state']['lessons_lines']} lines)
-- **Hindsight**: {"reachable" if last['hindsight'].get('reachable') else f"NOT reachable — {last['hindsight'].get('reason', '?')}"}
+- **Memory backend ({last["memory"].get("backend", "?")})**: {"reachable" if last["memory"].get("reachable") else "NOT reachable" if last["memory"].get("reachable") is False else "not probed — " + last["memory"].get("reason", "?")}
 {drift_section}
 ## Watchdog Status
 - Status: {last['watchdog']['status']}
@@ -436,8 +482,9 @@ def build_weekly_audit(history):
 
     # Stage 2/3 evidence
     stage_evidence = {
-        "hindsight_reachable_this_week": any(h.get("hindsight", {}).get("reachable") for h in week),
-        "hindsight_reachable_now": last.get("hindsight", {}).get("reachable", False),
+        "memory_reachable_this_week": any(h.get("memory", {}).get("reachable") for h in week),
+        "memory_reachable_now": last.get("memory", {}).get("reachable", False),
+        "memory_backend": last.get("memory", {}).get("backend", "?"),
         "lessons_growth_lines": last["state"]["lessons_lines"] - (
             week[0]["state"].get("lessons_lines", 0) if week[0]["state"].get("lessons_exists") else 0
         ),
@@ -470,7 +517,7 @@ def build_weekly_audit(history):
 | Missed-run gaps (>1.5h) | {missed_runs} |
 | Cumulative dream-cycle runs | {stage_evidence['total_dream_runs_cumulative']} |
 | Lessons file lines now | {last['state']['lessons_lines']} |
-| Hindsight reachable (now / this-week) | {stage_evidence['hindsight_reachable_now']} / {stage_evidence['hindsight_reachable_this_week']} |
+| Memory backend reachable (now / this-week) | {stage_evidence['memory_reachable_now']} / {stage_evidence['memory_reachable_this_week']} |
 | Any proposals observed | {stage_evidence['has_any_proposal']} |
 | Any apply observed | {stage_evidence['has_any_apply']} |
 | Any rollback observed | {stage_evidence['has_any_rollback']} |
@@ -508,7 +555,7 @@ def build_weekly_audit(history):
 **Evidence to consult:**
 - Stage 2/3 structural evidence: {stage_evidence}
 - Lessons file growth this week: {stage_evidence['lessons_growth_lines']} lines
-- Hindsight reachability (now {stage_evidence['hindsight_reachable_now']} / this-week {stage_evidence['hindsight_reachable_this_week']})
+- Memory backend reachability (now {stage_evidence['memory_reachable_now']} / this-week {stage_evidence['memory_reachable_this_week']})
 
 **Answer template:** [agent fills in]
 
@@ -529,7 +576,7 @@ def build_weekly_audit(history):
 
 ### e) General feeling about the architecture
 **Evidence to consult:**
-- Stage 2/3 evidence + lessons growth + Hindsight reachability → answers whether the architecture is delivering on its design
+- Stage 2/3 evidence + lessons growth + memory reachability → answers whether the architecture is delivering on its design
 
 **Answer template:** [agent fills in]
 
