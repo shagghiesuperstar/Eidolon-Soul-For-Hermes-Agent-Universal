@@ -319,10 +319,98 @@ ls -la ~/.hermes/skills/_eidolon_staging/
 grep -c "EIDOLON EDICTS" ~/.hermes/SOUL.md
 wc -l ~/.hermes/memories/MEMORY.md
 
-# 4. Check the dashboard
-open http://localhost:8000/docs/dashboard.html
+# 4. Check the dashboard (port 8010 — :8000 is often claimed by omlx on Trinity)
+open http://127.0.0.1:8010/docs/dashboard.html
+# MCP: eidolon mcp serve --port 7401  (loopback only)
 ```
 
 ---
 
-**This brief contains every observable, file path, line number, metric value, and design constraint the council needs. The repo is live. The dashboard is live. The canary is Trinity (m4mbp). The output gate is the last piece between a thinking machine and a self-improving one.**
+## 7. FIELD DELTA — Trinity canary, 2026-07-20 (post-brief)
+
+Empirical updates after §0–§6 were written. Council must treat these as **current ground truth**, not stale July-14 snapshot alone.
+
+### 7.1 Live report counters (window 24h, `eidolon report --json`)
+
+Observed repeatedly 2026-07-14 → 2026-07-20 on Trinity:
+
+| Metric | ~2026-07-14 | ~2026-07-20 | Interpretation |
+|--------|-------------|-------------|----------------|
+| lessons_extracted | 341 | **720** | Ingest/extract still scaling |
+| lessons_judged | 62 | **65** | Judgment runs, barely grows vs extract |
+| proposals_generated | 25 | **24** | Still generating ideas |
+| **proposals_applied** | **0** | **0** | **Output gate still closed** |
+| skills_modified | 0 | **0** | No live skill file mutations |
+| skills_staged | 0 | **0** | Staging path not moving dashboard KPI |
+| soul_edicts | 28 | **28** | Soft SOUL section only; not X/Y/Z/W proof |
+| config_changes | 0 | **0** | No allowlisted config mutations |
+| inbox_cleared | 0 | **0** | Inbox not draining |
+| bandit_episodes | 0 | **0** | RL layer idle |
+| sessions_observed | 25 | **24** | Steady session volume |
+
+**Invariant across days:** extract ≫ judge ≫ apply. Apply remains zero. Dashboard TIER-1 mutation chart remains the honest scoreboard.
+
+### 7.2 Outbox / pending lessons
+
+- Daily Perplexity situational brief (job `498d200a61f8`) claimed **16/16 outbox lessons stuck pending**.
+- Live probe of `~/.hermes/state/eidolon/outbox/` on 2026-07-20: **directory empty** (no pending files on disk at probe time).
+- **Council rule:** do not treat cron brief prose as ground truth without re-probing the outbox path and `events.jsonl`. Prefer `eidolon report --json` + filesystem probe.
+
+### 7.3 Dashboard / MCP ops (Trinity)
+
+| Service | Port | Notes |
+|---------|------|-------|
+| Dashboard HTML | **8010** | `python3 -m http.server 8010` from repo root; file `docs/dashboard.html` |
+| MCP | **7401** | `eidolon mcp serve --port 7401`, bind **127.0.0.1 only** |
+| Port 8000 | contested | Often `omlx-server` — do not assume dashboard owns :8000 |
+
+CORS: MCP server requires `Access-Control-Allow-Origin` + OPTIONS for browser dashboards (shipped on branch `feat/self-improvement-dashboard`).
+
+### 7.4 Classifier → executor path (unchanged root cause)
+
+Still the structural bottleneck:
+
+```
+dream.propose → gate_and_apply(LOW) → apply_low
+  → hermes_bridge.promote_lesson_to_hermes
+    → classify_lesson (regex signals)
+      → MEMORY_RETAIN (default "no_signal")  OR  SKILL_UPDATE → staging only
+    → proposals_applied increments only on Law-of-Done skill path
+```
+
+Pattern lesson text like  
+`Pattern 'lesson' observed N time(s). Most recent: CANARY: …`  
+matches **no** `_SKILL_SIGNALS` / `_SOUL_SIGNALS` / `_CONFIG_SIGNALS` → **MEMORY_RETAIN** → duplicate skip next cycle → **mutation chart flat**.
+
+### 7.5 What “done” means for Hermes value (operator north star)
+
+Not pipeline green. Not doctor PASS. Not MEMORY.md length.
+
+**Measurable Hermes self-improvement** = non-zero trend on dashboard TIER-1:
+- `skills_modified` and/or `skills_staged`→promoted live skill
+- `soul_edicts` that change next-session behavior (below EDICTS marker only)
+- `config_changes` via allowlisted `hermes` CLI only
+- `memory_retired` after bake-in
+- `proposals_applied` > 0 with Law-of-Done
+- inbox depth **oscillates** (↑ then ↓), not monotonic climb
+
+Differentiated from native Hermes: Eidolon must produce **deterministic file/skill/SOUL mutations + rollback/LKG + adversarial gates + dashboard proof**, not only session memory notes Hermes already does.
+
+### 7.6 Out of scope for this brief (do not conflate)
+
+- Claude CLI bridge / launchd model expansion on other hosts (ss/M5) — separate ops track; **no default-model change, no fallback_providers add, no launchd, loopback-only** unless operator `[GO]`.
+- OpenRouter removal from Trinity fallback/MOA (2026-07-20) — host config hygiene, not REC-022.
+
+### 7.7 Branch artifacts for council
+
+| Path | Commit | Role |
+|------|--------|------|
+| `docs/EIDOLON_OUTPUT_GATE_BRIEF.md` | `48f1c52`+ | This brief |
+| `docs/dashboard.html` | `742757f` | Human proof surface |
+| `src/eidolon/mcp/server.py` CORS | `677a5b2` | Browser→MCP |
+| `scripts/eidolon-nightly-monitor.py` | `71fbc84` | Backend-agnostic memory probe |
+| Branch | `feat/self-improvement-dashboard` | All of the above |
+
+---
+
+**This brief contains every observable, file path, line number, metric value, and design constraint the council needs. The repo is live. The dashboard is live on Trinity at :8010 + MCP :7401 (loopback). The canary is Trinity (m4mbp). The output gate is the last piece between a thinking machine and a self-improving one. §7 is the 2026-07-20 empirical seal: apply still zero — design REC-022 against that fact.**
