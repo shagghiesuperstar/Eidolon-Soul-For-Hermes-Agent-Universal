@@ -316,7 +316,7 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "content": (lesson.get("content") or "")[:400],
                 "lesson_content": lesson.get("content", ""),
                 "risk": "low",
-                "mutation_kind": "preference_update",
+                "mutation_kind": "skill_update" if lesson.get("source_kind") == "lesson" else "preference_update",
             }
             candidates.append(candidate)
             try:
@@ -360,7 +360,7 @@ def propose(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "content": (lesson.get("content") or "")[:400],
                 "lesson_content": lesson.get("content", ""),
                 "risk": "low",
-                "mutation_kind": "preference_update",
+                "mutation_kind": "skill_update" if lesson.get("source_kind") == "lesson" else "preference_update",
             }
             candidates.append(candidate)
             if adapter is not None:

@@ -67,9 +67,12 @@ NEVER_TOUCH_PATHS: Tuple[str, ...] = (
 _NEVER_TOUCH_RE = re.compile("|".join(f"(?:{p})" for p in NEVER_TOUCH_PATHS))
 
 
-# Mutation kinds that count as behavioural. Kept as a frozen set so callers
-# can pass plain strings without worrying about typos being silently OK.
-_MUTATION_LOW = frozenset({"docs_only", "typo_fix", "test_only", "comment_only", "preference_update"})
+# Mutation kinds that are safe to auto-apply. ``skill_update`` is staging-only;
+# the Judgment Brain writes under ``skills/_eidolon_staging`` and the Law of
+# Done verifies that write before counting the proposal as applied.
+_MUTATION_LOW = frozenset(
+    {"docs_only", "typo_fix", "test_only", "comment_only", "preference_update", "skill_update"}
+)
 _MUTATION_MEDIUM = frozenset({"prompt_phrasing", "log_verbosity", "config_field_add"})
 _MUTATION_HIGH = frozenset({"skill_code", "config_field_rewrite", "handler_signature"})
 _MUTATION_NO_OP = frozenset({"no_op", "identity", ""})

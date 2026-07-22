@@ -12,6 +12,10 @@ Versioning: [SemVer](https://semver.org/).
 - `eidolon report` prints a human-readable scoreboard: lessons extracted, proposals applied, skills staged, inbox cleared (#46)
 
 ### Fixed
+- **REC-022 — File-mutation output gate:** `propose()` routes lesson-kind
+  candidates to the low-risk `skill_update` mutation tier. `proposals_applied`
+  now increments only after a verified SKILL_UPDATE staging write and
+  `mark_done()`, never on a ledger-only write or skipped bridge.
 - **P1 — Dream metrics all-zero (canary 2026-07-12):** `extract_lessons()` now
   calls `metrics.increment("memory_retained")` once per flushed lesson. After
   139 runs all counters read zero because a normal lesson flush touched no

@@ -111,6 +111,8 @@ event counts): `lessons_extracted` counts persisted Hindsight JSONL entries,
 `*.md` files under `$HERMES_HOME/skills/_eidolon_staging`, and `inbox_cleared`
 is lessons with `done=True`.
 
+> `proposals_applied` increments only after a verified TIER-1 staging file write.
+
 ### `eidolon report --json` — machine-readable output
 
 Pass `--json` to get raw JSON on stdout (schema 1, stable):

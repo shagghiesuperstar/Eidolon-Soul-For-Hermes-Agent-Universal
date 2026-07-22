@@ -47,6 +47,12 @@ Classification is rule-based (no LLM call, no external dependency). Priority:
 
 See `src/eidolon/judgment/classifier.py` for the full signal lists.
 
+REC-022 also classifies the dream proposal itself for risk: proposals derived
+from a `lesson` pattern emit `mutation_kind=skill_update`. That mutation kind is
+LOW because execution can only write to `_eidolon_staging`; the Law of Done
+increments `proposals_applied` only after the staging write succeeds and the
+source lesson is marked done. Other source kinds remain `preference_update`.
+
 ## Measurable output
 
 Run `eidolon report` to see:
