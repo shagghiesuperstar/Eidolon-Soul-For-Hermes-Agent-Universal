@@ -47,6 +47,11 @@ src/eidolon/outbox.py       Crash-safe transactional outbox (REC-019)
 tests/                      Adversarial harness + test plan
 ```
 
+
+## 📊 Live Dashboard
+
+Open the self-contained [Eidolon Dashboard](docs/dashboard.html) to watch Hermes self-improvement metrics trend in the browser. It polls the local MCP endpoint, stores 24h snapshots in `localStorage`, and degrades gracefully when the MCP server is offline.
+
 ## The `eidolon` CLI
 
 Eidolon ships a canonical command that never silently no-ops. Every subcommand
@@ -105,6 +110,8 @@ event counts): `lessons_extracted` counts persisted Hindsight JSONL entries,
 `proposals_applied` is the Law-of-Done judgment counter, `skills_staged` counts
 `*.md` files under `$HERMES_HOME/skills/_eidolon_staging`, and `inbox_cleared`
 is lessons with `done=True`.
+
+> `proposals_applied` increments only after a verified TIER-1 staging file write.
 
 ### `eidolon report --json` — machine-readable output
 
